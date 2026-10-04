@@ -118,6 +118,16 @@ if (!checkFileAccessPermission(context.agentId, filePath, 'read')) {
 
 ## Model-Facing Tool Transport
 
+Headless sidecars expose the relay-backed `builtin-interpreter` browser page
+tools (including `interpreter_whole_computer_state_get`) through the same
+`interpreter-app` CLI as the desktop host. They do not expose Electron-only
+layout, selection, or settings handlers. Browser page actions still require an
+observed tab and the normal per-profile browser permissions; a running sidecar
+alone does not imply a connected browser extension.
+The thread-scoped `interpreter_wake_schedule` command is also available in a
+headless sidecar; `list` reads only the authenticated caller's native thread,
+and edits retain the same thread and permission checks.
+
 Interpreter workstation tools are model-facing through the `interpreter-app` CLI only.
 
 - Builtins and configured MCP servers are discovered and called through the CLI.
