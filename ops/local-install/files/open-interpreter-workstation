@@ -4,16 +4,14 @@ repo="${INTERPRETER_ROOT:-/mnt/infra/apps/interpreter-workstation}"
 cd "$repo"
 
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
-export QWEN_ASR_LANGUAGE="${QWEN_ASR_LANGUAGE:-Portuguese}"
-export QWEN_ASR_PROMPT="${QWEN_ASR_PROMPT:-Português do Brasil. Preserve nomes próprios, cidades brasileiras e termos técnicos. Grafias relevantes: Taubaté, DeepSeek, GitHub, Interpreter, Open Interpreter, Qwen, WhatsApp, business-automation.}"
-
-# qwen-asr is linked against OpenBLAS. Prefer the user-space copy prepared
-# by the restore kit so voice input works without a system-wide package.
-openblas_dir="$repo/.local-sysroot/usr/lib/x86_64-linux-gnu/openblas-pthread"
-sysroot_lib_dir="$repo/.local-sysroot/usr/lib/x86_64-linux-gnu"
-if [ -d "$openblas_dir" ]; then
-  export LD_LIBRARY_PATH="$openblas_dir:$sysroot_lib_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-fi
+apps_root="$(dirname "$repo")"
+whisper_root="${WHISPER_ROOT:-$apps_root/whisper.cpp}"
+export WHISPER_SERVER_URL="${WHISPER_SERVER_URL:-http://127.0.0.1:1264/inference}"
+export WHISPER_CPP_BIN="${WHISPER_CPP_BIN:-$whisper_root/build-vulkan/bin/whisper-cli}"
+export WHISPER_CPP_MODEL="${WHISPER_CPP_MODEL:-$whisper_root/models/ggml-large-v3-turbo-q5_0.bin}"
+export WHISPER_CPP_LANGUAGE="${WHISPER_CPP_LANGUAGE:-pt}"
+export WHISPER_CPP_THREADS="${WHISPER_CPP_THREADS:-8}"
+export WHISPER_CPP_BEAM_SIZE="${WHISPER_CPP_BEAM_SIZE:-5}"
 
 # Load API credentials from local secret files.
 if [ -f "$HOME/.openinterpreter/secrets/deepseek.env" ]; then

@@ -2667,6 +2667,12 @@ export function setupIpcHandlers(deps: HandlerDependencies): void {
       request?: import('./registry').VoiceExtensionCheckInstalledRequest,
     ): Promise<import('./registry').VoiceExtensionCheckInstalledResponse> => {
       try {
+        if (request?.backend === 'whisper') {
+          return {
+            installed: true,
+            installPath: process.env.WHISPER_CPP_MODEL,
+          };
+        }
         const { isVoiceExtensionInstalled, getVoiceExtensionInstallRoot } = await import('../services/voice-extension');
         const backend = request?.backend;
         return {
@@ -2690,6 +2696,9 @@ export function setupIpcHandlers(deps: HandlerDependencies): void {
       request?: import('./registry').VoiceExtensionInstallRequest,
     ): Promise<import('./registry').VoiceExtensionInstallResponse> => {
       try {
+        if (request?.backend === 'whisper') {
+          return { success: true };
+        }
         const { installVoiceExtension } = await import('../services/voice-extension');
         await installVoiceExtension(request?.backend);
         return { success: true };

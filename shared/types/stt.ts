@@ -1,4 +1,4 @@
-export const STT_BACKENDS = ['qwen', 'moonshine'] as const;
+export const STT_BACKENDS = ['whisper', 'qwen', 'moonshine'] as const;
 export type SttBackend = (typeof STT_BACKENDS)[number];
 
 export const VOICE_MODES = ['conversational', 'push-to-talk', 'ambient'] as const;

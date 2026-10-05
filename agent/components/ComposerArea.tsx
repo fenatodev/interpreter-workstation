@@ -78,7 +78,8 @@ import { trackVoiceModeStarted, trackVoiceModeStopped, trackVoiceModeChanged } f
 import {
   MICROPHONE_CAPTURE_REQUEST,
   QwenStreamingCaptureSession,
-  checkEndOfTurn,
+  VoiceCaptureSession,
+  transcribeVoiceWav,
   getAdaptiveVoiceSilenceTimeoutMs,
   shouldUseMoonshineVoiceBackend,
   finishVoiceStreamSession,
@@ -246,16 +247,19 @@ function formatDownloadSize(bytes: number): string {
 }
 
 function getSttDownloadSizeBytes(backend: SttBackend): number {
+  if (backend === 'whisper') return 0;
   return backend === 'moonshine'
     ? MOONSHINE_STT_DOWNLOAD_BYTES
     : QWEN_STT_DOWNLOAD_BYTES;
 }
 
 function getSttModelDisplayLabel(backend: SttBackend): string {
+  if (backend === 'whisper') return 'Whisper STT (local Vulkan)';
   return backend === 'moonshine' ? 'Moonshine STT model' : 'Qwen STT model';
 }
 
 function resolveManagedSttBackend(backend: SttBackend): SttBackend {
+  if (backend === 'whisper') return 'whisper';
   return shouldUseMoonshineVoiceBackend(backend) ? 'moonshine' : 'qwen';
 }
 
@@ -331,7 +335,7 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
   const [isVoiceModelsModalOpen, setIsVoiceModelsModalOpen] = useState(false);
   const [isVoiceModelInstallPending, setIsVoiceModelInstallPending] = useState(false);
   const [isPushToTalkFinishing, setIsPushToTalkFinishing] = useState(false);
-  const voiceCaptureSessionRef = useRef<QwenStreamingCaptureSession | null>(null);
+  const voiceCaptureSessionRef = useRef<QwenStreamingCaptureSession | VoiceCaptureSession | null>(null);
   const qwenStreamBridgeRef = useRef<QwenVoiceStreamBridge | null>(null);
   const moonshineTranscriberRef = useRef<MoonshineMicrophoneTranscriber | null>(null);
   const moonshineSilenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1444,6 +1448,14 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
       return;
     }
 
+    const finalCapture = voiceCaptureSessionRef.current;
+    if (finalCapture instanceof VoiceCaptureSession) {
+      isPushToTalkAwaitingSpeechStartRef.current = false;
+      finalCapture.beginManualUtterance();
+      console.log('[VoiceMode] Push-to-talk armed backend="whisper"');
+      return;
+    }
+
     isPushToTalkAwaitingSpeechStartRef.current = false;
     qwenStreamBridgeRef.current?.reset();
     console.log('[VoiceMode] Push-to-talk armed backend="qwen"');
@@ -1570,7 +1582,7 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
     );
   }, [i18n.language, i18n.resolvedLanguage]);
 
-  const sendVoiceText = useCallback(async (text: string, backend: 'moonshine' | 'qwen') => {
+  const sendVoiceText = useCallback(async (text: string, backend: 'moonshine' | 'qwen' | 'whisper') => {
     if (!isVoiceModeActiveRef.current) return;
     text = sanitizeVoiceTranscript(text);
     if (!text) return;
@@ -2423,6 +2435,66 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
         return;
       }
 
+      // Conversational and Push-to-Talk use full-utterance WAV transcription.
+      // This deliberately avoids the qwen streaming bridge: holding Space only
+      // records audio; releasing Space sends one complete utterance to local Whisper.
+      if (currentVoiceMode !== 'ambient') {
+        const voiceSession = new VoiceCaptureSession({
+          silenceTimeoutMs: sttSettingsRef.current.silenceTimeoutMs,
+          manualOnly: currentVoiceMode === 'push-to-talk',
+          onSpeechStart: () => {
+            if (!isVoiceModeActiveRef.current) return;
+            setIsSpeechDetected(true);
+            if (currentVoiceMode === 'conversational') {
+              interruptAssistantForBargeIn();
+            }
+          },
+          onSpeechEnd: () => {
+            if (!isVoiceModeActiveRef.current) return;
+            setIsSpeechDetected(false);
+          },
+          onUtterance: async (wavBlob: Blob) => {
+            if (!isVoiceModeActiveRef.current || isVoiceSendInFlightRef.current) return;
+            isVoiceSendInFlightRef.current = true;
+            try {
+              const transcript = sanitizeVoiceTranscript(await transcribeVoiceWav(wavBlob));
+              if (transcript) {
+                await sendVoiceText(transcript, 'whisper');
+              }
+            } catch (error) {
+              const errorMessage = describeVoiceError(error, 'Voice transcription failed.');
+              console.error('[VoiceMode] Whisper transcription failed:', errorMessage, error);
+              showToast(`Voice transcription failed: ${errorMessage}`, 'error', 8000);
+            } finally {
+              isVoiceSendInFlightRef.current = false;
+            }
+          },
+          onError: (error: unknown) => {
+            const errorMessage = describeVoiceError(error, 'Could not capture microphone audio.');
+            console.error('[VoiceMode] Voice capture error:', errorMessage, error);
+            showToast(errorMessage, 'error', 8000);
+            stopVoiceMode();
+          },
+        });
+
+        voiceCaptureSessionRef.current = voiceSession;
+        await voiceSession.start();
+        if (!isMountedRef.current || isVoiceModeActiveRef.current) {
+          voiceSession.stop();
+          voiceCaptureSessionRef.current = null;
+          return;
+        }
+
+        isVoiceModeActiveRef.current = true;
+        setIsVoiceModeActive(true);
+        trackActiveVoiceModeStarted(activeVoiceMode);
+        emitVoiceLatencyEvent('voice-mode-started', {
+          surface: 'main-composer',
+          backend: 'whisper',
+        });
+        return;
+      }
+
       // On macOS ambient mode, use SFSpeechRecognizer only as a fast detector
       // for the wake word / end phrase. qwen_asr remains authoritative for the
       // actual command transcript once ambient capture is active.
@@ -2471,7 +2543,6 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
       // Silero VAD (server-side) classifies each chunk as speech/silence.
       // On speech→silence transition, use adaptive silence timeout to send.
       let lastTranscriptText = '';
-      let lastTranscriptChangeAt = 0;
       let wasSpeech = false;
       let silenceSendTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -2524,7 +2595,6 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
         ambientPendingSendText = '';
         ambientCycleAccumulated = '';
         lastTranscriptText = '';
-        lastTranscriptChangeAt = 0;
         wasSpeech = false;
         lastAmbientDetectorLoggedText = '';
         lastAmbientQwenLoggedText = '';
@@ -2593,7 +2663,6 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
         ambientPendingSendText = '';
         ambientCycleAccumulated = '';
         lastTranscriptText = '';
-        lastTranscriptChangeAt = 0;
         wasSpeech = false;
         lastAmbientDetectorLoggedText = '';
         lastAmbientQwenLoggedText = '';
@@ -2730,104 +2799,16 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
         }
       }
 
-      const doFinishAndSend = () => {
-        if (!isVoiceModeActiveRef.current || isVoiceSendInFlightRef.current) return;
-        const oldBridge = qwenStreamBridgeRef.current;
-        if (!oldBridge) return;
-
-        isVoiceSendInFlightRef.current = true;
-        void (async () => {
-          try {
-            const { transcript } = await oldBridge.snapshotUtterance();
-            if (!transcript) {
-              isVoiceSendInFlightRef.current = false;
-              return;
-            }
-
-            const sessionId = await oldBridge.ensureSession();
-
-            // Switch to new bridge BEFORE finishing old session.
-            // This prevents race: chunks arriving during finishVoiceStreamSession
-            // would hit the dead session on the old bridge.
-            replaceQwenStreamBridge(false);
-            await oldBridge.waitForQueuedChunks();
-
-            const finalTranscript = sanitizeVoiceTranscript(await finishVoiceStreamSession(sessionId));
-
-            lastTranscriptText = '';
-            lastTranscriptChangeAt = 0;
-            wasSpeech = false;
-
-            const textToSend = finalTranscript || transcript;
-            if (!textToSend) return;
-
-            await sendVoiceText(textToSend, 'qwen');
-          } catch (error) {
-            const errorMessage = describeVoiceError(error, 'Voice transcription failed while sending.');
-            console.error('[VoiceMode] qwen_asr streaming transcription failed:', errorMessage, error);
-            showToast(`Voice transcription failed: ${errorMessage}`, 'error', 8000);
-          } finally {
-            isVoiceSendInFlightRef.current = false;
-          }
-        })();
-      };
-
-      const scheduleAdaptiveSilenceSend = () => {
-        if (wasSpeech || !isVoiceModeActiveRef.current) return;
-        const transcriptAge = Date.now() - lastTranscriptChangeAt;
-        const timeoutMs = getAdaptiveVoiceSilenceTimeoutMs(lastTranscriptText, {
-          silenceTimeoutMs: sttSettingsRef.current.silenceTimeoutMs,
-          fastSentenceSilenceTimeoutMs: sttSettingsRef.current.fastSentenceSilenceTimeoutMs,
-        });
-        const remaining = Math.max(0, timeoutMs - transcriptAge);
-        silenceSendTimer = setTimeout(doFinishAndSend, remaining);
-      };
-
-      const tryScheduleSend = () => {
-        clearSilenceSendTimer();
-        if (!lastTranscriptText || isVoiceSendInFlightRef.current) return;
-
-        // Use Smart Turn for semantic end-of-turn detection.
-        // On speech→silence, ask Smart Turn if the user is done.
-        // If done → send immediately. If not done → fall back to adaptive
-        // silence timeout (never hang — always schedule a send eventually).
-        const bridge = qwenStreamBridgeRef.current;
-        if (bridge) {
-          void (async () => {
-            try {
-              const sessionId = await bridge.ensureSession();
-              const result = await checkEndOfTurn(sessionId);
-              // If speech resumed while we were checking, abort
-              if (wasSpeech || !isVoiceModeActiveRef.current) return;
-              if (result.done) {
-                // Smart Turn says turn is complete — send with short preview delay
-                const previewMs = Math.min(sttSettingsRef.current.previewBeforeSendMs, 300);
-                silenceSendTimer = setTimeout(doFinishAndSend, previewMs);
-              } else {
-                // Smart Turn says not done — fall back to adaptive silence timeout
-                scheduleAdaptiveSilenceSend();
-              }
-            } catch {
-              // Smart Turn failed — fall back to adaptive silence timeout
-              scheduleAdaptiveSilenceSend();
-            }
-          })();
-        }
-      };
-
       const voiceSession = new QwenStreamingCaptureSession({
         onPcmChunk: (pcmChunk: Uint8Array) => {
           if (!isVoiceModeActiveRef.current) return;
-          if (currentVoiceMode === 'push-to-talk' && !isPushToTalkHeldRef.current) return;
 
-          if (currentVoiceMode === 'ambient') {
-            ambientPcmRingBuffer.push(new Uint8Array(pcmChunk));
-            const maxAmbientBufferChunks = useAmbientCycling
-              ? AMBIENT_OVERLAP_CHUNKS
-              : AMBIENT_COMMAND_PREROLL_CHUNKS;
-            if (ambientPcmRingBuffer.length > maxAmbientBufferChunks) {
-              ambientPcmRingBuffer.shift();
-            }
+          ambientPcmRingBuffer.push(new Uint8Array(pcmChunk));
+          const maxAmbientBufferChunks = useAmbientCycling
+            ? AMBIENT_OVERLAP_CHUNKS
+            : AMBIENT_COMMAND_PREROLL_CHUNKS;
+          if (ambientPcmRingBuffer.length > maxAmbientBufferChunks) {
+            ambientPcmRingBuffer.shift();
           }
 
           if (useNativeAmbientDetector) {
@@ -2896,53 +2877,22 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
           void bridge.enqueueChunk(pcmChunk, (update) => {
             if (!isVoiceModeActiveRef.current) return;
             if (qwenStreamBridgeRef.current !== bridge) return;
-            if (currentVoiceMode === 'push-to-talk' && !isPushToTalkHeldRef.current) {
-              setIsSpeechDetected(false);
-              return;
-            }
 
-            // Speech state transitions from Silero VAD
-            // Skip for push-to-talk — the spacebar is the only signal there.
-            if (currentVoiceMode !== 'push-to-talk') {
-              if (update.isSpeech && !wasSpeech) {
-                // Speech started
-                if (currentVoiceMode !== 'ambient') {
-                  interruptAssistantForBargeIn();
-                }
-                clearSilenceSendTimer();
-              }
-              if (!update.isSpeech && wasSpeech && lastTranscriptText) {
-                // Speech ended AND we have transcript — schedule send
-                if (currentVoiceMode === 'conversational') {
-                  tryScheduleSend();
-                }
-              }
-              wasSpeech = update.isSpeech;
-              setIsSpeechDetected(update.isSpeech);
+            if (update.isSpeech && !wasSpeech) {
+              clearSilenceSendTimer();
             }
+            wasSpeech = update.isSpeech;
+            setIsSpeechDetected(update.isSpeech);
 
             const normalized = sanitizeVoiceTranscript(update.transcript);
             if (normalized && normalized !== lastTranscriptText) {
               lastTranscriptText = normalized;
-              lastTranscriptChangeAt = Date.now();
-              // Transcript changed — reset send timer.
-              // If we're in silence (speech already ended), re-schedule the
-              // send so that late-arriving transcripts still trigger delivery.
               clearSilenceSendTimer();
-              if (!wasSpeech && currentVoiceMode === 'conversational') {
-                tryScheduleSend();
-              }
             }
 
-            // Mode-specific transcript handling
-            if (currentVoiceMode === 'ambient') {
-              if (normalized && normalized !== lastAmbientDetectorLoggedText) {
-                lastAmbientDetectorLoggedText = normalized;
-                handleAmbientTranscriptGate(normalized, 'transcript-updated');
-              }
-            } else {
-              // Conversational mode — show transcript normally
-              previewVoiceText(update.transcript);
+            if (normalized && normalized !== lastAmbientDetectorLoggedText) {
+              lastAmbientDetectorLoggedText = normalized;
+              handleAmbientTranscriptGate(normalized, 'transcript-updated');
             }
           });
         },
@@ -3129,7 +3079,16 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
         return;
       }
 
-      // Finish the ASR session, wait for qwen to fully transcribe, then send.
+      const finalCapture = voiceCaptureSessionRef.current;
+      if (finalCapture instanceof VoiceCaptureSession) {
+        setIsPushToTalkFinishing(true);
+        void finalCapture.finishManualUtterance().finally(() => {
+          setIsPushToTalkFinishing(false);
+        });
+        return;
+      }
+
+      // Legacy fallback for streaming qwen sessions.
       const bridge = qwenStreamBridgeRef.current;
       if (!bridge || isVoiceSendInFlightRef.current) return;
 

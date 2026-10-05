@@ -24,16 +24,14 @@ GH_BASE="https://github.com/cli/cli/releases/download/v${GH_VERSION}"
 NODE_VERSION="22.23.3"
 PNPM_VERSION="9.15.9"
 BUN_VERSION="1.4.2"
-QWEN_MODEL_ID="Qwen/Qwen3-ASR-0.6B"
-QWEN_MODEL_DIRNAME="qwen3-asr-0.6b"
-QWEN_MODEL_BASE="https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/main"
-QWEN_SHA_CONFIG="76d3ae4601ce939830b2517f4a6cadb86cc51316c3900af6b020b051c21a478c"
-QWEN_SHA_GENERATION_CONFIG="1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"
-QWEN_SHA_MODEL="79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea"
-QWEN_SHA_VOCAB="ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
-QWEN_SHA_MERGES="8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+WHISPER_VERSION="1.9.4"
+WHISPER_REPO="https://github.com/ggml-org/whisper.cpp.git"
+WHISPER_ROOT="$(dirname "$ROOT")/whisper.cpp"
+WHISPER_MODEL_NAME="ggml-large-v3-turbo-q5_0.bin"
+WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$WHISPER_MODEL_NAME"
+WHISPER_MODEL_SHA256="394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
 TTS_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
-EXPECTED_TAG="known-good-2026-10-05-voice-stable"
+EXPECTED_TAG="known-good-2026-10-05-whisper-voice"
 
 log() { printf "[restore] %s\n" "$*"; }
 die() { printf "[restore] ERROR: %s\n" "$*" >&2; exit 1; }
@@ -41,7 +39,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing base prerequisite: $1";
 
 export PATH="$LOCAL_BIN:$HOME_DIR/.bun/bin:$PATH"
 
-for cmd in git curl tar sha256sum python3 xz apt-get dpkg-deb; do need "$cmd"; done
+for cmd in git curl tar sha256sum python3 xz apt-get; do need "$cmd"; done
 
 if [[ "$MODE" == "check" ]]; then
   log "repo=$ROOT"
@@ -57,18 +55,21 @@ if [[ "$MODE" == "check" ]]; then
     log "deepseek-proxy=not-ready"
   fi
   [[ -f "$CONFIG_DIR/main-window-state.json" ]] && log "window-state=present" || log "window-state=will-be-created-on-use"
-  CHECK_OPENBLAS="$ROOT/.local-sysroot/usr/lib/x86_64-linux-gnu/openblas-pthread"
-  CHECK_SYSROOT_LIB="$ROOT/.local-sysroot/usr/lib/x86_64-linux-gnu"
-  CHECK_QWEN="$CONFIG_DIR/qwen-asr/linux-x64/qwen_asr"
-  CHECK_QWEN_MODEL="$CONFIG_DIR/qwen-asr/linux-x64/$QWEN_MODEL_DIRNAME/model.safetensors"
-  if [[ -x "$CHECK_QWEN" && -f "$CHECK_QWEN_MODEL" && -e "$CHECK_OPENBLAS/libopenblas.so.0" ]]; then
-    if LD_LIBRARY_PATH="$CHECK_OPENBLAS:$CHECK_SYSROOT_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$CHECK_QWEN" --help >/dev/null 2>&1; then
-      log "qwen-stt=ready"
+  CHECK_WHISPER_BIN="$WHISPER_ROOT/build-vulkan/bin/whisper-cli"
+  CHECK_WHISPER_MODEL="$WHISPER_ROOT/models/$WHISPER_MODEL_NAME"
+  if [[ -x "$CHECK_WHISPER_BIN" && -f "$CHECK_WHISPER_MODEL" ]]; then
+    if printf "%s  %s\\n" "$WHISPER_MODEL_SHA256" "$CHECK_WHISPER_MODEL" | sha256sum -c - >/dev/null 2>&1; then
+      log "whisper-stt=ready"
     else
-      log "qwen-stt=runtime-error"
+      log "whisper-stt=model-hash-mismatch"
     fi
   else
-    log "qwen-stt=missing"
+    log "whisper-stt=missing"
+  fi
+  if curl -fsS --max-time 3 http://127.0.0.1:1264/ >/dev/null 2>&1; then
+    log "whisper-server=ready"
+  else
+    log "whisper-server=not-ready"
   fi
   [[ -f "$CONFIG_DIR/tts-models/kokoro-pt_BR-dora-v1_0/kokoro-multi-lang-v1_0/model.onnx" ]] \
     && log "tts-dora-ptbr=installed" \
@@ -104,31 +105,6 @@ git -C "$ROOT" remote set-url --push upstream DISABLED
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-
-OPENBLAS_SYSROOT="$ROOT/.local-sysroot"
-OPENBLAS_LIB_DIR="$OPENBLAS_SYSROOT/usr/lib/x86_64-linux-gnu/openblas-pthread"
-SYSROOT_LIB_DIR="$OPENBLAS_SYSROOT/usr/lib/x86_64-linux-gnu"
-if [[ ! -e "$OPENBLAS_LIB_DIR/libopenblas.so.0" ]]; then
-  log "installing user-space OpenBLAS for Qwen STT"
-  (
-    cd "$TMP"
-    apt-get download libopenblas0-pthread >/dev/null
-    DEB="$(ls -1 libopenblas0-pthread_*.deb | head -1)"
-    [[ -n "$DEB" ]] || exit 1
-    dpkg-deb -x "$DEB" "$OPENBLAS_SYSROOT"
-  )
-fi
-if ! ldconfig -p 2>/dev/null | grep -q 'libgfortran\.so\.5'; then
-  log "installing user-space libgfortran for Qwen STT"
-  (
-    cd "$TMP"
-    apt-get download libgfortran5 >/dev/null
-    DEB="$(ls -1 libgfortran5_*.deb | head -1)"
-    [[ -n "$DEB" ]] || exit 1
-    dpkg-deb -x "$DEB" "$OPENBLAS_SYSROOT"
-  )
-fi
-export LD_LIBRARY_PATH="$OPENBLAS_LIB_DIR:$SYSROOT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 if ! command -v node >/dev/null 2>&1 || [[ "$(node --version 2>/dev/null || true)" != "v$NODE_VERSION" ]]; then
   log "installing Node v$NODE_VERSION"
@@ -174,37 +150,42 @@ hash -r
 log "installing repo dependencies"
 pnpm -C "$ROOT" install --frozen-lockfile
 
-log "downloading pinned qwen-asr runtime"
-pnpm -C "$ROOT" run download:qwen-asr -- --current-platform
-QWEN_SOURCE_DIR="$ROOT/resources/qwen-asr/linux-x64"
-QWEN_TARGET_DIR="$CONFIG_DIR/qwen-asr/linux-x64"
-QWEN_TARGET_MODEL_DIR="$QWEN_TARGET_DIR/$QWEN_MODEL_DIRNAME"
-mkdir -p "$QWEN_TARGET_MODEL_DIR"
-install -m 0755 "$QWEN_SOURCE_DIR/qwen_asr" "$QWEN_TARGET_DIR/qwen_asr"
-install -m 0644 "$QWEN_SOURCE_DIR/manifest.json" "$QWEN_TARGET_DIR/manifest.json"
+log "preparing Whisper.cpp Vulkan runtime"
+missing_whisper_dep=0
+for cmd in cmake ninja glslc c++; do
+  command -v "$cmd" >/dev/null 2>&1 || missing_whisper_dep=1
+done
+command -v pkg-config >/dev/null 2>&1 || missing_whisper_dep=1
+if command -v pkg-config >/dev/null 2>&1; then
+  pkg-config --exists vulkan >/dev/null 2>&1 || missing_whisper_dep=1
+fi
+if [[ "$missing_whisper_dep" == "1" ]]; then
+  command -v pkexec >/dev/null 2>&1 || die "Whisper Vulkan build dependencies are missing and pkexec is unavailable"
+  log "installing Whisper Vulkan build dependencies (Ubuntu authentication required)"
+  pkexec apt-get update
+  pkexec apt-get install -y build-essential cmake ninja-build glslc libvulkan-dev pkg-config
+fi
 
-download_qwen_file() {
-  local file="$1"
-  local expected_sha="$2"
-  local target="$QWEN_TARGET_MODEL_DIR/$file"
-  if [[ -f "$target" ]] && printf "%s  %s\n" "$expected_sha" "$target" | sha256sum -c - >/dev/null 2>&1; then
-    log "reusing verified Qwen STT file: $file"
-    return
-  fi
-  log "downloading Qwen STT file: $file"
-  curl -fL --retry 3 --retry-delay 2 "$QWEN_MODEL_BASE/$file" -o "$target.tmp"
-  printf "%s  %s\n" "$expected_sha" "$target.tmp" | sha256sum -c -
-  mv "$target.tmp" "$target"
-}
-download_qwen_file config.json "$QWEN_SHA_CONFIG"
-download_qwen_file generation_config.json "$QWEN_SHA_GENERATION_CONFIG"
-download_qwen_file model.safetensors "$QWEN_SHA_MODEL"
-download_qwen_file vocab.json "$QWEN_SHA_VOCAB"
-download_qwen_file merges.txt "$QWEN_SHA_MERGES"
+if [[ ! -d "$WHISPER_ROOT/.git" ]]; then
+  git clone --branch "v$WHISPER_VERSION" --depth 1 "$WHISPER_REPO" "$WHISPER_ROOT"
+else
+  git -C "$WHISPER_ROOT" fetch --tags --depth 1 origin "v$WHISPER_VERSION"
+  git -C "$WHISPER_ROOT" checkout -f "v$WHISPER_VERSION"
+fi
+cmake -S "$WHISPER_ROOT" -B "$WHISPER_ROOT/build-vulkan" -G Ninja   -DGGML_VULKAN=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build "$WHISPER_ROOT/build-vulkan" -j "$(nproc)"
 
-LD_LIBRARY_PATH="$OPENBLAS_LIB_DIR:$SYSROOT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  "$QWEN_TARGET_DIR/qwen_asr" --help >/dev/null 2>&1 \
-  || die "qwen-asr runtime validation failed"
+WHISPER_MODEL_PATH="$WHISPER_ROOT/models/$WHISPER_MODEL_NAME"
+mkdir -p "$WHISPER_ROOT/models"
+if [[ ! -f "$WHISPER_MODEL_PATH" ]]   || ! printf "%s  %s
+" "$WHISPER_MODEL_SHA256" "$WHISPER_MODEL_PATH" | sha256sum -c - >/dev/null 2>&1; then
+  log "downloading Whisper large-v3-turbo q5 model"
+  curl -fL --retry 3 --retry-delay 2 "$WHISPER_MODEL_URL" -o "$WHISPER_MODEL_PATH.tmp"
+  printf "%s  %s
+" "$WHISPER_MODEL_SHA256" "$WHISPER_MODEL_PATH.tmp" | sha256sum -c -
+  mv "$WHISPER_MODEL_PATH.tmp" "$WHISPER_MODEL_PATH"
+fi
+"$WHISPER_ROOT/build-vulkan/bin/whisper-cli" --version >/dev/null 2>&1   || die "Whisper CLI validation failed"
 
 log "downloading pinned OIX runtime"
 pnpm -C "$ROOT" run download:oix -- --current-platform
@@ -253,13 +234,20 @@ sed -e "s|__HOME__|$HOME_DIR|g" -e "s|__NODE__|$NODE_BIN|g" \
   "$KIT/templates/deepseek-responses-proxy.service" \
   > "$USER_SYSTEMD_DIR/deepseek-responses-proxy.service"
 chmod 0644 "$USER_SYSTEMD_DIR/deepseek-responses-proxy.service"
+sed -e "s|__WHISPER_ROOT__|$WHISPER_ROOT|g" \
+  "$KIT/templates/interpreter-whisper.service" \
+  > "$USER_SYSTEMD_DIR/interpreter-whisper.service"
+chmod 0644 "$USER_SYSTEMD_DIR/interpreter-whisper.service"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
 if command -v systemctl >/dev/null 2>&1 && systemctl --user daemon-reload >/dev/null 2>&1; then
   systemctl --user enable --now deepseek-responses-proxy.service >/dev/null 2>&1 \
     || log "DeepSeek proxy service could not be started; launcher fallback will be used"
+  systemctl --user enable --now interpreter-whisper.service >/dev/null 2>&1 \
+    || die "Whisper STT service could not be started"
 else
   log "user systemd unavailable; launcher fallback will be used for DeepSeek proxy"
+  log "ACTION REQUIRED: start whisper-server manually on 127.0.0.1:1264"
 fi
 
 mkdir -p "$HOME_DIR/.local/share/applications"
@@ -410,11 +398,11 @@ if not tts.get("success"):
     raise RuntimeError(tts.get("error") or "failed to configure TTS")
 
 stt=post("/stt/setSettings",[{"settings":{
-    "backend":"qwen",
+    "backend":"whisper",
     "stripChineseCharacters":True,
     "silenceTimeoutMs":1800,
     "fastSentenceSilenceTimeoutMs":700,
-    "previewBeforeSendMs":500,
+    "previewBeforeSendMs":650,
     "sendCommand":"enviar",
     "newChatCommand":"nova conversa",
     "voiceMode":"push-to-talk",
@@ -423,7 +411,7 @@ stt=post("/stt/setSettings",[{"settings":{
 }}])
 if not stt.get("success"):
     raise RuntimeError(stt.get("error") or "failed to configure STT")
-print("[restore] voice=Dora pt-BR; STT=Qwen push-to-talk")
+print("[restore] voice=Kokoro pt-BR (Dora/Alex/Santa); STT=Whisper push-to-talk")
 PY
 
 log "applying MCP defaults"

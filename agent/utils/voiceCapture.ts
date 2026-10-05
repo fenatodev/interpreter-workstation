@@ -51,6 +51,7 @@ interface VoiceCaptureOptions {
   silenceTimeoutMs?: number;
   speechThreshold?: number;
   interimIntervalMs?: number;
+  manualOnly?: boolean;
   onSpeechStart?: () => void;
   onSpeechEnd?: () => void;
   onInterimUtterance?: (wavBlob: Blob) => Promise<void> | void;
@@ -295,8 +296,8 @@ export async function abortVoiceStreamSession(sessionId: string): Promise<void> 
 }
 
 export class VoiceCaptureSession {
-  private readonly options: Required<Pick<VoiceCaptureOptions, 'silenceTimeoutMs' | 'speechThreshold' | 'interimIntervalMs'>>
-    & Omit<VoiceCaptureOptions, 'silenceTimeoutMs' | 'speechThreshold' | 'interimIntervalMs'>;
+  private readonly options: Required<Pick<VoiceCaptureOptions, 'silenceTimeoutMs' | 'speechThreshold' | 'interimIntervalMs' | 'manualOnly'>>
+    & Omit<VoiceCaptureOptions, 'silenceTimeoutMs' | 'speechThreshold' | 'interimIntervalMs' | 'manualOnly'>;
   private silenceTimeoutMs: number;
 
   private mediaStream: MediaStream | null = null;
@@ -324,6 +325,7 @@ export class VoiceCaptureSession {
       silenceTimeoutMs: options.silenceTimeoutMs ?? DEFAULT_SILENCE_TIMEOUT_MS,
       speechThreshold: options.speechThreshold ?? DEFAULT_SPEECH_THRESHOLD,
       interimIntervalMs: options.interimIntervalMs ?? DEFAULT_INTERIM_INTERVAL_MS,
+      manualOnly: options.manualOnly ?? false,
       onUtterance: options.onUtterance,
       onInterimUtterance: options.onInterimUtterance,
       onSpeechStart: options.onSpeechStart,
@@ -373,9 +375,28 @@ export class VoiceCaptureSession {
     this.isActive = true;
     this.resampler.reset();
     this.resetPcmBuffers();
-    this.monitorTimer = setInterval(() => {
-      void this.monitorAudio();
-    }, AUDIO_MONITOR_INTERVAL_MS);
+    if (!this.options.manualOnly) {
+      this.monitorTimer = setInterval(() => {
+        void this.monitorAudio();
+      }, AUDIO_MONITOR_INTERVAL_MS);
+    }
+  }
+
+  beginManualUtterance(): void {
+    if (!this.isActive || !this.options.manualOnly || this.isSpeaking || this.isProcessingUtterance) return;
+    this.isSpeaking = true;
+    this.utteranceGeneration += 1;
+    this.resetPcmBuffers();
+    this.resampler.reset();
+    this.options.onSpeechStart?.();
+  }
+
+  async finishManualUtterance(): Promise<void> {
+    if (!this.isActive || !this.options.manualOnly || !this.isSpeaking) return;
+    this.isSpeaking = false;
+    const completedUtteranceGeneration = this.utteranceGeneration;
+    this.options.onSpeechEnd?.();
+    await this.emitFinalUtterance(completedUtteranceGeneration);
   }
 
   stop(): void {

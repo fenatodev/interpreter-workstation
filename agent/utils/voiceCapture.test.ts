@@ -76,4 +76,36 @@ describe('voice capture microphone startup', () => {
     expect(getUserMediaMock).toHaveBeenCalledTimes(1);
     expect(getUserMediaMock).toHaveBeenCalledWith({ audio: true });
   });
+
+  test('manual push-to-talk capture emits one WAV only after release', async () => {
+    const utterances: Blob[] = [];
+    const session = new VoiceCaptureSession({
+      manualOnly: true,
+      onUtterance: async (wavBlob) => {
+        utterances.push(wavBlob);
+      },
+    });
+
+    await session.start();
+    session.beginManualUtterance();
+
+    const samples = new Float32Array(4800);
+    samples.fill(0.25);
+    const internal = session as unknown as {
+      handleAudioProcess(event: AudioProcessingEvent): void;
+    };
+    internal.handleAudioProcess({
+      inputBuffer: {
+        getChannelData: () => samples,
+      },
+    } as unknown as AudioProcessingEvent);
+
+    expect(utterances).toHaveLength(0);
+    await session.finishManualUtterance();
+    expect(utterances).toHaveLength(1);
+    expect(utterances[0]?.type).toBe('audio/wav');
+    expect((utterances[0]?.size ?? 0) > 44).toBe(true);
+
+    session.stop();
+  });
 });

@@ -88,7 +88,7 @@ import { renameThread } from '../handlers/agentThreads';
 
 import { appendCustomInstructionsToPrompt } from '../utils/customInstructions';
 import { isReasoningEffort } from '../../shared/types/reasoning';
-import { transcribeWavWithQwenAsr } from '../utils/qwenAsr';
+import { transcribeWavWithWhisper } from '../utils/whisperAsr';
 import {
   abortQwenAsrStreamSession,
   appendQwenAsrStreamChunk,
@@ -1420,7 +1420,7 @@ router.post(
         return res.status(400).json({ error: 'Expected non-empty audio/wav request body.' });
       }
 
-      const text = await transcribeWavWithQwenAsr(req.body);
+      const text = await transcribeWavWithWhisper(req.body);
       return res.json({ text });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to transcribe voice message.';

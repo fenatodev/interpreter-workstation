@@ -46,6 +46,7 @@ function resolveManagedSttBackend(platform: string, backend: SttBackend): SttBac
 }
 
 function getSttBackendLabel(backend: SttBackend): string {
+  if (backend === 'whisper') return 'Whisper STT (local Vulkan)';
   return backend === 'moonshine' ? 'Moonshine STT model' : 'Qwen STT model';
 }
 
@@ -448,6 +449,7 @@ export function SpeechToTextSectionContent() {
             value={settings.backend}
             onValueChange={handleBackendChange}
             items={[
+              { value: 'whisper', label: 'Whisper (local Vulkan)' },
               { value: 'qwen', label: t('settings.stt.backendOptionQwen') },
               { value: 'moonshine', label: t('settings.stt.backendOptionMoonshine') },
             ]}
