@@ -5,28 +5,32 @@ This directory reproduces the known-good Ubuntu workstation setup without storin
 ## Exact reference
 
 - Branch: `interpreter-stable`
-- Restore-ready tag: `known-good-2026-10-05-restore-ready`
+- Restore-ready tag: `known-good-2026-10-05-voice-ready`
 - Open Interpreter/OIX: 0.0.55
 - Linux Computer Use: 0.7.10
 - Node: 22.23.3
 - pnpm: 9.15.9
 - Bun: 1.4.2
 - GitHub CLI: 2.102.0
+- STT: Qwen3-ASR-0.6B local (Push-to-Talk)
+- TTS: Kokoro Dora pt-BR, speaker 42, local CPU
 
 ## Fresh restore
 
-Base Ubuntu requirements: `git`, `curl`, `tar`, `sha256sum`, `python3`, and `xz-utils`.
+Base Ubuntu requirements: `git`, `curl`, `tar`, `sha256sum`, `python3`, `xz-utils`, `apt-get`, and `dpkg-deb`.
 
 ```bash
 mkdir -p /mnt/infra/apps
 git clone --branch interpreter-stable https://github.com/fenatodev/interpreter-workstation.git /mnt/infra/apps/interpreter-workstation
 cd /mnt/infra/apps/interpreter-workstation
 git fetch --tags
-git reset --hard known-good-2026-10-05-restore-ready
+git reset --hard known-good-2026-10-05-voice-ready
 ./ops/local-install/restore.sh apply
 ```
 
-The script installs the pinned user-space toolchain, verified OIX and Computer Use binaries, GitHub CLI, the launcher, desktop entry, DeepSeek proxy, safe Interpreter settings, autonomy policy, MCP defaults, the DeepSeek Flash profile, and builds/starts Workstation.
+The script installs the pinned user-space toolchain, verified OIX and Computer Use binaries, GitHub CLI, the launcher, desktop entry, DeepSeek proxy, safe Interpreter settings, autonomy policy, MCP defaults, the DeepSeek Flash profile, Qwen3-ASR local STT, user-space OpenBLAS, Kokoro Dora pt-BR TTS, and builds/starts Workstation.
+
+Microsoft Edge is intentionally handled by `./ops/local-install/install-edge.sh` because Ubuntu authentication is required. The helper validates the official Microsoft package, installs it through the system authentication prompt, then opens the official Interpreter Chrome Extension page; Chromium still requires one human confirmation to add the extension.
 
 ## Secrets and account sessions
 

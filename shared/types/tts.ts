@@ -65,6 +65,26 @@ export const TTS_MODELS = [
     downloadBytes: 349418188,
   },
   {
+    id: 'kokoro-pt_BR-dora-v1_0',
+    family: 'kokoro',
+    size: 'large',
+    label: 'Kokoro Dora (pt-BR, feminina)',
+    description: 'Natural Brazilian Portuguese Kokoro voice using speaker pf_dora.',
+    assetName: 'kokoro-multi-lang-v1_0.tar.bz2',
+    rootDirName: 'kokoro-multi-lang-v1_0',
+    modelFile: 'model.onnx',
+    voicesFile: 'voices.bin',
+    tokensFile: 'tokens.txt',
+    dataDir: 'espeak-ng-data',
+    lang: 'pt',
+    voiceLabels: {
+      42: 'Dora (pt-BR, feminina)',
+      43: 'Alex (pt-BR)',
+      44: 'Santa (pt-BR)',
+    },
+    downloadBytes: 349418188,
+  },
+  {
     id: 'vits-piper-zh_CN-huayan-medium',
     family: 'vits',
     size: 'medium',
@@ -175,6 +195,7 @@ export interface TtsModelDefinition {
   acousticModelFile?: string;
   vocoderFile?: string;
   lang?: string;
+  voiceLabels?: Readonly<Record<number, string>>;
   downloadBytes: number;
 }
 

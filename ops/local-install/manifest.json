@@ -1,5 +1,5 @@
 {
-  "known_good_tag": "known-good-2026-10-05-restore-ready",
+  "known_good_tag": "known-good-2026-10-05-voice-ready",
   "branch": "interpreter-stable",
   "versions": {
     "node": "v22.23.3",
@@ -7,24 +7,42 @@
     "bun": "1.4.2",
     "gh": "2.102.0",
     "interpreter_cli": "0.0.55",
-    "computer_use_linux": "0.7.10"
+    "computer_use_linux": "0.7.10",
+    "qwen_stt": "Qwen3-ASR-0.6B",
+    "tts": "kokoro-pt_BR-dora-v1_0"
   },
   "sha256": {
     "interpreter_cli": "7eab0cb9e9bca5e08efaa029e062887b8a220019560792d54c0af465227e3237",
-    "computer_use_linux_x86_64_unknown_linux_gnu": "e292e884dec1579b8caf958eb87c68ccf4d9e10f7caaf7c51b001f997b52a431"
+    "computer_use_linux_x86_64_unknown_linux_gnu": "e292e884dec1579b8caf958eb87c68ccf4d9e10f7caaf7c51b001f997b52a431",
+    "qwen_config_json": "76d3ae4601ce939830b2517f4a6cadb86cc51316c3900af6b020b051c21a478c",
+    "qwen_generation_config_json": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+    "qwen_model_safetensors": "79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea",
+    "qwen_vocab_json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+    "qwen_merges_txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
   },
   "defaults": {
     "codex_apps_enabled": false,
     "linux_computer_use_enabled": true,
     "whatsapp_requires_relink": true,
     "github_requires_gh_auth": true,
-    "deepseek_secret_file": "~/.openinterpreter/secrets/deepseek.env"
+    "deepseek_secret_file": "~/.openinterpreter/secrets/deepseek.env",
+    "stt_backend": "qwen",
+    "stt_mode": "push-to-talk",
+    "tts_read_assistant_messages": true,
+    "tts_model_id": "kokoro-pt_BR-dora-v1_0",
+    "tts_voice_id": 42,
+    "tts_voice_label": "Dora (pt-BR, feminina)",
+    "edge_browser_control_extension_requires_human_confirmation": true
   },
   "sources": {
     "oix": "openinterpreter/openinterpreter release rust-v0.0.55 via scripts/download-oix.mjs",
     "computer_use_linux": "agent-sh/computer-use-linux v0.7.10",
     "gh": "cli/cli v2.102.0",
     "bun": "oven-sh/bun bun-v1.4.2",
-    "node": "nodejs.org/dist/v22.23.3"
+    "node": "nodejs.org/dist/v22.23.3",
+    "qwen_stt": "Qwen/Qwen3-ASR-0.6B via Hugging Face; runtime built from antirez/qwen-asr",
+    "tts": "k2-fsa/sherpa-onnx tts-models kokoro-multi-lang-v1_0; pt-BR speaker pf_dora / voiceId 42",
+    "edge": "packages.microsoft.com stable repository",
+    "interpreter_browser_extension": "Chrome Web Store extension bboaaphdpllilofamfpommlbafpellnb"
   }
 }

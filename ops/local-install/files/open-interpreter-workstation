@@ -5,6 +5,14 @@ cd "$repo"
 
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
+# qwen-asr is linked against OpenBLAS. Prefer the user-space copy prepared
+# by the restore kit so voice input works without a system-wide package.
+openblas_dir="$repo/.local-sysroot/usr/lib/x86_64-linux-gnu/openblas-pthread"
+sysroot_lib_dir="$repo/.local-sysroot/usr/lib/x86_64-linux-gnu"
+if [ -d "$openblas_dir" ]; then
+  export LD_LIBRARY_PATH="$openblas_dir:$sysroot_lib_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
 # Load API credentials from local secret files.
 if [ -f "$HOME/.openinterpreter/secrets/deepseek.env" ]; then
   set -a

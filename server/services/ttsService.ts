@@ -584,6 +584,7 @@ export async function getVoiceOptions(
     return [];
   }
 
+  const model = getModelByIdOrThrow(modelId);
   const entry = await getOrCreateEngine(modelId, provider);
   const totalSpeakers = Math.max(1, entry.engine.numSpeakers || 0);
 
@@ -591,7 +592,7 @@ export async function getVoiceOptions(
   for (let speakerId = 0; speakerId < totalSpeakers; speakerId += 1) {
     voices.push({
       id: speakerId,
-      label: `Voice ${speakerId + 1}`,
+      label: model.voiceLabels?.[speakerId] ?? `Voice ${speakerId + 1}`,
     });
   }
 

@@ -24,7 +24,16 @@ GH_BASE="https://github.com/cli/cli/releases/download/v${GH_VERSION}"
 NODE_VERSION="22.23.3"
 PNPM_VERSION="9.15.9"
 BUN_VERSION="1.4.2"
-EXPECTED_TAG="known-good-2026-10-05-restore-ready"
+QWEN_MODEL_ID="Qwen/Qwen3-ASR-0.6B"
+QWEN_MODEL_DIRNAME="qwen3-asr-0.6b"
+QWEN_MODEL_BASE="https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/main"
+QWEN_SHA_CONFIG="76d3ae4601ce939830b2517f4a6cadb86cc51316c3900af6b020b051c21a478c"
+QWEN_SHA_GENERATION_CONFIG="1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"
+QWEN_SHA_MODEL="79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea"
+QWEN_SHA_VOCAB="ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+QWEN_SHA_MERGES="8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+TTS_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
+EXPECTED_TAG="known-good-2026-10-05-voice-ready"
 
 log() { printf "[restore] %s\n" "$*"; }
 die() { printf "[restore] ERROR: %s\n" "$*" >&2; exit 1; }
@@ -32,7 +41,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing base prerequisite: $1";
 
 export PATH="$LOCAL_BIN:$HOME_DIR/.bun/bin:$PATH"
 
-for cmd in git curl tar sha256sum python3 xz; do need "$cmd"; done
+for cmd in git curl tar sha256sum python3 xz apt-get dpkg-deb; do need "$cmd"; done
 
 if [[ "$MODE" == "check" ]]; then
   log "repo=$ROOT"
@@ -43,6 +52,37 @@ if [[ "$MODE" == "check" ]]; then
   [[ -x "$LOCAL_BIN/gh" ]] && "$LOCAL_BIN/gh" auth status -h github.com >/dev/null 2>&1 && log "gh=authenticated" || log "gh=needs-auth"
   [[ -s "$SECRET_FILE" ]] && log "deepseek-secret=present" || log "deepseek-secret=needs-restore"
   [[ -f "$CONFIG_DIR/main-window-state.json" ]] && log "window-state=present" || log "window-state=will-be-created-on-use"
+  CHECK_OPENBLAS="$ROOT/.local-sysroot/usr/lib/x86_64-linux-gnu/openblas-pthread"
+  CHECK_SYSROOT_LIB="$ROOT/.local-sysroot/usr/lib/x86_64-linux-gnu"
+  CHECK_QWEN="$CONFIG_DIR/qwen-asr/linux-x64/qwen_asr"
+  CHECK_QWEN_MODEL="$CONFIG_DIR/qwen-asr/linux-x64/$QWEN_MODEL_DIRNAME/model.safetensors"
+  if [[ -x "$CHECK_QWEN" && -f "$CHECK_QWEN_MODEL" && -e "$CHECK_OPENBLAS/libopenblas.so.0" ]]; then
+    if LD_LIBRARY_PATH="$CHECK_OPENBLAS:$CHECK_SYSROOT_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$CHECK_QWEN" --help >/dev/null 2>&1; then
+      log "qwen-stt=ready"
+    else
+      log "qwen-stt=runtime-error"
+    fi
+  else
+    log "qwen-stt=missing"
+  fi
+  [[ -f "$CONFIG_DIR/tts-models/kokoro-pt_BR-dora-v1_0/kokoro-multi-lang-v1_0/model.onnx" ]] \
+    && log "tts-dora-ptbr=installed" \
+    || log "tts-dora-ptbr=missing"
+  if curl -fsS --max-time 2 http://127.0.0.1:5177/api/profiles >/dev/null 2>&1; then
+    python3 - <<'PY'
+import json, urllib.request
+for namespace in ("tts","stt"):
+    req=urllib.request.Request(
+        f"http://127.0.0.1:5177/api/ipc/{namespace}/getSettings",
+        data=b"[]",
+        headers={"Content-Type":"application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req,timeout=10) as resp:
+        payload=json.loads(resp.read().decode()).get("settings",{})
+    print(f"[restore] {namespace}-settings={json.dumps(payload,ensure_ascii=False,separators=(',',':'))}")
+PY
+  fi
   exit 0
 fi
 
@@ -59,6 +99,31 @@ git -C "$ROOT" remote set-url --push upstream DISABLED
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+OPENBLAS_SYSROOT="$ROOT/.local-sysroot"
+OPENBLAS_LIB_DIR="$OPENBLAS_SYSROOT/usr/lib/x86_64-linux-gnu/openblas-pthread"
+SYSROOT_LIB_DIR="$OPENBLAS_SYSROOT/usr/lib/x86_64-linux-gnu"
+if [[ ! -e "$OPENBLAS_LIB_DIR/libopenblas.so.0" ]]; then
+  log "installing user-space OpenBLAS for Qwen STT"
+  (
+    cd "$TMP"
+    apt-get download libopenblas0-pthread >/dev/null
+    DEB="$(ls -1 libopenblas0-pthread_*.deb | head -1)"
+    [[ -n "$DEB" ]] || exit 1
+    dpkg-deb -x "$DEB" "$OPENBLAS_SYSROOT"
+  )
+fi
+if ! ldconfig -p 2>/dev/null | grep -q 'libgfortran\.so\.5'; then
+  log "installing user-space libgfortran for Qwen STT"
+  (
+    cd "$TMP"
+    apt-get download libgfortran5 >/dev/null
+    DEB="$(ls -1 libgfortran5_*.deb | head -1)"
+    [[ -n "$DEB" ]] || exit 1
+    dpkg-deb -x "$DEB" "$OPENBLAS_SYSROOT"
+  )
+fi
+export LD_LIBRARY_PATH="$OPENBLAS_LIB_DIR:$SYSROOT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 if ! command -v node >/dev/null 2>&1 || [[ "$(node --version 2>/dev/null || true)" != "v$NODE_VERSION" ]]; then
   log "installing Node v$NODE_VERSION"
@@ -103,6 +168,38 @@ hash -r
 
 log "installing repo dependencies"
 pnpm -C "$ROOT" install --frozen-lockfile
+
+log "downloading pinned qwen-asr runtime"
+pnpm -C "$ROOT" run download:qwen-asr -- --current-platform
+QWEN_SOURCE_DIR="$ROOT/resources/qwen-asr/linux-x64"
+QWEN_TARGET_DIR="$CONFIG_DIR/qwen-asr/linux-x64"
+QWEN_TARGET_MODEL_DIR="$QWEN_TARGET_DIR/$QWEN_MODEL_DIRNAME"
+mkdir -p "$QWEN_TARGET_MODEL_DIR"
+install -m 0755 "$QWEN_SOURCE_DIR/qwen_asr" "$QWEN_TARGET_DIR/qwen_asr"
+install -m 0644 "$QWEN_SOURCE_DIR/manifest.json" "$QWEN_TARGET_DIR/manifest.json"
+
+download_qwen_file() {
+  local file="$1"
+  local expected_sha="$2"
+  local target="$QWEN_TARGET_MODEL_DIR/$file"
+  if [[ -f "$target" ]] && printf "%s  %s\n" "$expected_sha" "$target" | sha256sum -c - >/dev/null 2>&1; then
+    log "reusing verified Qwen STT file: $file"
+    return
+  fi
+  log "downloading Qwen STT file: $file"
+  curl -fL --retry 3 --retry-delay 2 "$QWEN_MODEL_BASE/$file" -o "$target.tmp"
+  printf "%s  %s\n" "$expected_sha" "$target.tmp" | sha256sum -c -
+  mv "$target.tmp" "$target"
+}
+download_qwen_file config.json "$QWEN_SHA_CONFIG"
+download_qwen_file generation_config.json "$QWEN_SHA_GENERATION_CONFIG"
+download_qwen_file model.safetensors "$QWEN_SHA_MODEL"
+download_qwen_file vocab.json "$QWEN_SHA_VOCAB"
+download_qwen_file merges.txt "$QWEN_SHA_MERGES"
+
+LD_LIBRARY_PATH="$OPENBLAS_LIB_DIR:$SYSROOT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  "$QWEN_TARGET_DIR/qwen_asr" --help >/dev/null 2>&1 \
+  || die "qwen-asr runtime validation failed"
 
 log "downloading pinned OIX runtime"
 pnpm -C "$ROOT" run download:oix -- --current-platform
@@ -247,6 +344,64 @@ except urllib.error.HTTPError as e:
 else:
     request("PATCH","/api/profiles/"+profile["id"],profile)
 request("POST","/api/profiles/default",{"profileId":profile["id"]})
+PY
+
+log "installing and configuring local voice"
+python3 - <<'PY'
+import json, urllib.request
+base="http://127.0.0.1:5177/api/ipc"
+
+def post(path,payload,timeout=60):
+    req=urllib.request.Request(
+        base+path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type":"application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req,timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+model_id="kokoro-pt_BR-dora-v1_0"
+models=post("/tts/listModels",[])
+model=next((item for item in models.get("models",[]) if item.get("id")==model_id),None)
+if not model:
+    raise RuntimeError(f"pt-BR TTS model missing from catalog: {model_id}")
+if not model.get("installed"):
+    result=post("/tts/installModel",[{"modelId":model_id}],timeout=900)
+    if not result.get("success"):
+        raise RuntimeError(result.get("error") or "pt-BR TTS install failed")
+voices=post("/tts/getVoices",[{"modelId":model_id}],timeout=180)
+voice=next((item for item in voices.get("voices",[]) if item.get("id")==42),None)
+if not voice:
+    raise RuntimeError("Dora pt-BR voiceId 42 unavailable")
+
+tts=post("/tts/setSettings",[{"settings":{
+    "readAssistantMessages":True,
+    "modelId":model_id,
+    "voiceId":42,
+    "speed":1.0,
+    "pitch":0,
+    "provider":"cpu",
+    "autotuneEnabled":False,
+}}])
+if not tts.get("success"):
+    raise RuntimeError(tts.get("error") or "failed to configure TTS")
+
+stt=post("/stt/setSettings",[{"settings":{
+    "backend":"qwen",
+    "stripChineseCharacters":True,
+    "silenceTimeoutMs":1800,
+    "fastSentenceSilenceTimeoutMs":700,
+    "previewBeforeSendMs":500,
+    "sendCommand":"enviar",
+    "newChatCommand":"nova conversa",
+    "voiceMode":"push-to-talk",
+    "ambientTriggerPhrases":["Interpreter","Intérprete","Interprete"],
+    "ambientEndPhrases":["enviar","pronto"],
+}}])
+if not stt.get("success"):
+    raise RuntimeError(stt.get("error") or "failed to configure STT")
+print("[restore] voice=Dora pt-BR; STT=Qwen push-to-talk")
 PY
 
 log "applying MCP defaults"
