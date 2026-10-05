@@ -346,7 +346,10 @@ export type McpTransportConfig =
   | StdioTransportConfig
   | StreamableHttpTransportConfig;
 
+export type McpServerAuth = "oauth" | "chatgpt" | "ema_auth";
+
 export type McpServerSharedConfig = {
+  readonly auth?: McpServerAuth;
   readonly enabled?: boolean;
   readonly required?: boolean;
   readonly startupTimeoutSec?: number;
@@ -368,6 +371,7 @@ export type McpServerEntry = {
 // --- TOML wire format ---
 
 export type McpServerTomlEntry = {
+  auth?: McpServerAuth;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -401,6 +405,7 @@ type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y
   : false;
 
 type ConfigToTomlKeyMap = {
+  auth: "auth";
   command: "command";
   args: "args";
   env: "env";
@@ -475,6 +480,7 @@ export function mcpServerEntryToToml(entry: McpServerEntry): McpServerTomlWire {
     );
   }
 
+  setIfDefined(result, "auth", config.auth);
   setIfDefined(result, "enabled", config.enabled);
   setIfDefined(result, "required", config.required);
   setIfDefined(result, "startup_timeout_sec", config.startupTimeoutSec);

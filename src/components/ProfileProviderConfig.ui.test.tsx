@@ -20,7 +20,7 @@ const providersMocks = vi.hoisted(() => ({
     if (providerId === 'deepseek') {
       return {
         models: [
-          { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash', isDefault: true },
+          { id: 'deepseek-flash', name: 'deepseek-flash', isDefault: true },
         ] as Array<{ id: string; name: string; isDefault: boolean }>,
       };
     }
@@ -349,7 +349,7 @@ describe('ProfileProviderConfig', () => {
           baseURL: 'https://api.deepseek.com',
           codexProfileId: 'deepseek',
           apiFormat: 'openai',
-          wireApi: 'chat',
+          wireApi: 'responses',
         }}
         onChangeSpy={onChangeSpy}
       />,
@@ -365,7 +365,7 @@ describe('ProfileProviderConfig', () => {
         useResponsesApi: false,
       }));
       expect(onChangeSpy).toHaveBeenCalledWith(expect.objectContaining({
-        modelId: 'deepseek-v4-flash',
+        modelId: 'deepseek-flash',
       }));
     });
   });
@@ -373,7 +373,7 @@ describe('ProfileProviderConfig', () => {
   test('replaces the DeepSeek model dropdown with the live /models result once a key is present', async () => {
     providersMocks.listDeepSeekModels.mockResolvedValueOnce({
       models: [
-        { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
+        { id: 'deepseek-flash', name: 'deepseek-flash' },
         { id: 'deepseek-v4-turbo', name: 'deepseek-v4-turbo' },
       ],
     });
@@ -383,7 +383,7 @@ describe('ProfileProviderConfig', () => {
         profile={{
           id: 'api-profile',
           name: 'DeepSeek V4 Flash',
-          modelId: 'deepseek-v4-flash',
+          modelId: 'deepseek-flash',
           isBuiltin: false,
           provider: 'api',
           baseURL: 'https://api.deepseek.com',
@@ -402,7 +402,7 @@ describe('ProfileProviderConfig', () => {
     await waitFor(() => {
       expect(within(select).getByRole('option', { name: 'deepseek-v4-turbo' })).toBeInTheDocument();
     });
-    expect(within(select).getByRole('option', { name: 'deepseek-v4-flash' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: 'deepseek-flash' })).toBeInTheDocument();
     expect(providersMocks.listDeepSeekModels).toHaveBeenCalledWith('sk-deepseek-test');
   });
 
@@ -414,7 +414,7 @@ describe('ProfileProviderConfig', () => {
         profile={{
           id: 'api-profile',
           name: 'DeepSeek V4 Flash',
-          modelId: 'deepseek-v4-flash',
+          modelId: 'deepseek-flash',
           isBuiltin: false,
           provider: 'api',
           baseURL: 'https://api.deepseek.com',

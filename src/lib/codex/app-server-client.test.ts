@@ -146,7 +146,7 @@ function workspaceWriteSandboxPolicy(
 ): v2.SandboxPolicy {
   return {
     type: "workspaceWrite",
-    writableRoots: [],
+    writableRoots: getInterpreterCliSandboxWritableRoots(),
     networkAccess,
     excludeTmpdirEnvVar: !allowTempAccess,
     excludeSlashTmp: !allowTempAccess,
@@ -2185,6 +2185,7 @@ describe("CodexAppServerClient", () => {
     assert.deepEqual(writeReq.params.value, {
       url: "https://mcp.supabase.com/mcp",
       oauth_resource: "https://mcp.supabase.com/.well-known/oauth-protected-resource/mcp",
+      enabled: true,
       tool_timeout_sec: 3600,
       default_tools_approval_mode: "prompt",
     });
@@ -2344,6 +2345,7 @@ describe("CodexAppServerClient", () => {
     assert.equal(writeReq.params.keyPath, "mcp_servers.slow");
     assert.deepEqual(writeReq.params.value, {
       url: "https://example.com/mcp",
+      enabled: true,
       startup_timeout_sec: 45,
       tool_timeout_sec: 90,
       default_tools_approval_mode: "prompt",
@@ -2410,6 +2412,7 @@ describe("CodexAppServerClient", () => {
     assert.equal(writeReq.params.keyPath, "mcp_servers.realtime");
     assert.deepEqual(writeReq.params.value, {
       url: "wss://example.com/mcp",
+      enabled: true,
       tool_timeout_sec: 3600,
       default_tools_approval_mode: "prompt",
     });

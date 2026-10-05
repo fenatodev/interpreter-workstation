@@ -25,7 +25,7 @@ export const API_PROVIDER_MODEL_DEFAULTS = {
   openai: DEFAULT_OPENAI_RESPONSES_CUSTOM_TOOL_MODEL_ID,
   groq: 'llama-3.3-70b-versatile',
   openrouter: 'anthropic/claude-opus-4.6',
-  deepseek: 'deepseek-v4-flash',
+  deepseek: 'deepseek-flash',
 } as const;
 
 export type ApiProviderModelDefaultKey = keyof typeof API_PROVIDER_MODEL_DEFAULTS;

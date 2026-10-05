@@ -97,7 +97,7 @@ describe('ONBOARDING_MODEL_PACKS', () => {
       openai: 'gpt-5.4-nano',
       groq: 'llama-3.3-70b-versatile',
       openrouter: 'anthropic/claude-opus-4.6',
-      deepseek: 'deepseek-v4-flash',
+      deepseek: 'deepseek-flash',
     });
   });
 

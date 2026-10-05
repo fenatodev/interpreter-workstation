@@ -23,6 +23,7 @@ import type { McpServerConfig } from './mcpTypes';
 import { isToolServerAgentAccessible } from '../../shared/toolServerAvailability';
 import { prefixToolName } from '../../shared/utils/mcpToolName';
 import { approvalManager } from '../approvalManager';
+import { redactSensitiveValue } from '../../shared/utils/sensitiveText';
 
 let toolManagerBroadcastRequestId = 0;
 let toolManagerListStatusesRequestId = 0;
@@ -1101,9 +1102,9 @@ export class ToolManager {
      * Runtime path after approval:
      * [mcp-service.ts](../../src/lib/codex/mcp-service.ts).
      *
-     * Do not add a direct execution path before this branch. The chat runtime's
-     * global `mcp_servers` table stays empty in [codexRuntime.ts](../utils/codexRuntime.ts)
-     * so app MCP tools cannot bypass this gate.
+     * Do not add a direct execution path before this branch. The chat runtime
+     * explicitly disables app-managed MCP entries in [codexRuntime.ts](../utils/codexRuntime.ts)
+     * so inherited shared-runtime config cannot bypass this gate.
      */
     if (
       needsApproval
@@ -1145,7 +1146,7 @@ export class ToolManager {
       }
     }
 
-    return await getMcpService().callTool(
+    const result = await getMcpService().callTool(
       threadId,
       serverId,
       toolName,
@@ -1155,6 +1156,12 @@ export class ToolManager {
         cwd: toolContext?.workspace,
       },
     );
+
+    // MCP results can include user-controlled window titles, filenames, URLs,
+    // connector metadata, and command output. Redact credential-shaped text
+    // before any of it is returned to the model. Binary payload fields are
+    // preserved verbatim by redactSensitiveValue().
+    return redactSensitiveValue(result);
   }
 
   /**
@@ -1322,6 +1329,7 @@ export class ToolManager {
         url: normalizedUrl!,
         ...(config.headers && { httpHeaders: config.headers }),
         ...(config.oauthResource && { oauthResource: config.oauthResource }),
+        ...(config.auth && { auth: config.auth }),
         ...(config.enabled !== undefined && { enabled: config.enabled }),
         ...(config.startupTimeoutSec !== undefined && { startupTimeoutSec: config.startupTimeoutSec }),
         ...(config.toolTimeoutSec !== undefined && { toolTimeoutSec: config.toolTimeoutSec }),

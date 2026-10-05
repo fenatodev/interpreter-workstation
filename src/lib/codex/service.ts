@@ -665,6 +665,16 @@ export class CodexService {
   }
 
   async runTurn(options: RunTurnOptions) {
+    if (options.modelProvider && options.providerConfig?.env_key) {
+      await this.ensureProvider({
+        id: options.modelProvider,
+        label: options.providerConfig.name,
+        modelProvider: options.modelProvider,
+        model: options.model,
+        providerConfig: options.providerConfig,
+      }, true);
+    }
+
     if (options.threadId) {
       await this.reconcileTerminalTurn(options.threadId);
       this.assertNoActiveTurn(options.threadId);

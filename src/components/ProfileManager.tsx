@@ -338,10 +338,10 @@ const PRESET_SCAFFOLDING: Record<PresetKey, ProfilePreset> = {
   'deepseek-api': {
     id: 'deepseek-api',
     title: 'DeepSeek',
-    description: 'Use DeepSeek V4 via Chat Completions.',
+    description: 'Use DeepSeek via Chat Completions.',
     icon: <DeepSeekIcon className="size-5 text-muted-foreground" />,
     group: 'api',
-    defaultName: 'DeepSeek V4 Flash',
+    defaultName: 'DeepSeek Flash',
     provider: 'api',
     apiPreset: 'deepseek',
   },

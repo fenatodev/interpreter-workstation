@@ -8,6 +8,7 @@ import {
   getCodexSandboxMode,
   getCustomInstructions,
   getProfile as getStoredProfile,
+  listMcpServers,
 } from '../configStore';
 import { getServerJWT } from '../lib/jwtStore';
 import { getServerPort } from './serverPort';
@@ -485,9 +486,11 @@ function codexProfileFromStoredProfile(profile: AppProfile): CodexProfile {
     }
     return buildProfileFromPreset(preset, {
       baseUrl: profile.baseURL,
-      apiKey: profile.apiKey,
+      apiKey: profile.environmentKey ? undefined : profile.apiKey,
+      environmentKey: profile.environmentKey,
       model: profile.modelId,
       wireApi: profile.wireApi ?? 'chat',
+      harness: profile.harness,
     });
   }
 
@@ -2010,6 +2013,8 @@ export async function runCodexAgentTurn(
     throw new Error(localModelToolUseError);
   }
 
+  await options.service.ensureProvider(profile, true);
+
   const normalizedBinding = normalizeBinding(options.binding);
   // OIX can continue a saved thread after the HTTP turn has completed. Reuse
   // its thread-scoped app-tool caller instead of installing a new shell token
@@ -2042,14 +2047,23 @@ export async function runCodexAgentTurn(
   );
   const callerConfig = { ...(options.config ?? {}) };
   delete callerConfig.mcp_servers;
+  const appManagedMcpServers = await listMcpServers();
+  const disabledDirectMcpServers = Object.fromEntries(
+    appManagedMcpServers
+      .map((server) => server.id)
+      .filter((serverId): serverId is string => Boolean(serverId))
+      .map((serverId) => [serverId, { enabled: false }]),
+  ) as unknown as JsonValue;
   const threadConfig = {
     ...(profile.harness !== undefined ? { harness: profile.harness } : {}),
     ...callerConfig,
     ...(options.reasoningEffort ? { model_reasoning_effort: options.reasoningEffort } : {}),
     ...(options.usesChatGptAuth ? { forced_login_method: 'chatgpt' } : {}),
-    // App tools are discovered and executed through the shell-visible
-    // interpreter-app CLI. Never expose a second direct-MCP app-tool surface.
-    mcp_servers: {} as unknown as JsonValue,
+    // App tools are discovered and executed through the governed interpreter-app
+    // bridge. The shared CODEX_HOME also contains app-managed MCP definitions for
+    // the auxiliary MCP runtime, so explicitly disable each one on the main chat
+    // thread instead of relying on an empty table to shadow inherited config.
+    mcp_servers: disabledDirectMcpServers,
     shell_environment_policy: buildInterpreterCliShellEnvironmentPolicy(
       callerToken,
       process.env,

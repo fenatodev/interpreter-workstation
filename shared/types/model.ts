@@ -19,7 +19,7 @@ import {
 // the shipped defaults mirror that shape: the dropdown looks identical before and
 // after a live fetch replaces them.
 const DEEPSEEK_MODEL_OPTIONS = [
-  { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
+  { id: 'deepseek-flash', name: 'deepseek-flash' },
   { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
 ] as const;
 

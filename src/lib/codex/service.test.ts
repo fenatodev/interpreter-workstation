@@ -1766,6 +1766,50 @@ describe("CodexService", () => {
     await run;
   });
 
+  test("materializes env-key provider before running a turn without persisting bearer credentials", async () => {
+    const fake = createFakeClient();
+    const service = new CodexService(fake.client);
+
+    const run = service.runTurn({
+      message: "hello",
+      model: "deepseek-flash",
+      modelProvider: "interpreter-app-deepseek-test",
+      providerConfig: {
+        base_url: "https://api.deepseek.com",
+        name: "DeepSeek",
+        requires_openai_auth: false,
+        wire_api: "responses",
+        env_key: "DEEPSEEK_API_KEY",
+      },
+      onEvent: () => {},
+    });
+
+    await waitFor(() => fake.calls.startTurn === 1);
+
+    assert.equal(fake.calls.configValueWrite.length, 1);
+    assert.equal(
+      fake.calls.configValueWrite[0]?.keyPath,
+      "model_providers.interpreter-app-deepseek-test",
+    );
+    assert.deepEqual(fake.calls.configValueWrite[0]?.value, {
+      base_url: "https://api.deepseek.com",
+      name: "DeepSeek",
+      requires_openai_auth: false,
+      wire_api: "responses",
+      env_key: "DEEPSEEK_API_KEY",
+    });
+
+    fake.emit({
+      method: SERVER_METHOD.turnCompleted,
+      params: {
+        threadId: "thr_new",
+        turn: createTurn("turn_1", "completed"),
+      },
+    });
+
+    await run;
+  });
+
   test("passes cwd through to resumeThread", async () => {
     const fake = createFakeClient();
     const service = new CodexService(fake.client);

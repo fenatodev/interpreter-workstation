@@ -120,7 +120,7 @@ describe('ProfileManager', () => {
     providersMocks.getEnvApiKey.mockResolvedValue({ key: null as string | null });
     providersMocks.listInterpreterProviders.mockResolvedValue({ providers: DEFAULT_RUNTIME_PROVIDERS });
     providersMocks.listDeepSeekModels.mockResolvedValue({
-      models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', isDefault: true }],
+      models: [{ id: 'deepseek-flash', name: 'deepseek-flash', isDefault: true }],
     });
     providersMocks.probeResponsesApiSupport.mockResolvedValue({ reachable: true, supported: true });
   });
@@ -210,7 +210,7 @@ describe('ProfileManager', () => {
       expect(apiMocks.createProfile).toHaveBeenCalledWith(expect.objectContaining({
         baseURL: 'https://api.deepseek.com',
         codexProfileId: 'deepseek',
-        modelId: 'deepseek-v4-flash',
+        modelId: 'deepseek-flash',
         wireApi: 'chat',
         useResponsesApi: false,
       }));

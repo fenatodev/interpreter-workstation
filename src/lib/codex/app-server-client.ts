@@ -7,6 +7,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { promisify } from "node:util";
 import EventEmitter from "eventemitter3";
+import { redactSensitiveText as redactSharedSensitiveText } from "../../../shared/utils/sensitiveText";
 import {
   JSONRPCClient,
   type JSONRPCRequest,
@@ -743,23 +744,7 @@ function isJsonObject(value: unknown): value is JsonObject {
 }
 
 function redactSensitiveDiagnosticText(text: string): string {
-  let redacted = text;
-
-  redacted = redacted.replace(
-    /((?:["'`]?)(?:api[_-]?key|x-api-key|access[_-]?token|refresh[_-]?token|auth[_-]?token|oauth[_-]?token|authorization|client[_-]?secret|session[_-]?token|password|secret|experimental[_-]?bearer[_-]?token|bearer[_-]?token|jwt)(?:["'`]?)\s*[:=]\s*)(["'`]?)[^"'`,\s}\]]+\2/gi,
-    (_match, prefix: string, quote: string) => `${prefix}${quote}${REDACTED_DIAGNOSTIC_VALUE}${quote}`,
-  );
-
-  redacted = redacted.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi, `Bearer ${REDACTED_DIAGNOSTIC_VALUE}`);
-  redacted = redacted.replace(/\bsk-ant-[A-Za-z0-9_-]+\b/g, REDACTED_DIAGNOSTIC_VALUE);
-  redacted = redacted.replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g, REDACTED_DIAGNOSTIC_VALUE);
-  redacted = redacted.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\b/g, REDACTED_DIAGNOSTIC_VALUE);
-  redacted = redacted.replace(
-    /([?&](?:access_token|refresh_token|api_key|apikey|token)=)[^&\s]+/gi,
-    `$1${REDACTED_DIAGNOSTIC_VALUE}`,
-  );
-
-  return redacted;
+  return redactSharedSensitiveText(text, REDACTED_DIAGNOSTIC_VALUE);
 }
 
 function redactStructuredDiagnostic(value: unknown, parentKey?: string): unknown {
@@ -2489,6 +2474,7 @@ export class CodexAppServerClient {
       : params.sandboxPolicy ?? buildCodexSandboxPolicy({
           sandboxMode: runtimeAccess.sandboxMode,
           networkAccess: runtimeAccess.networkAccess,
+          writableRoots: getInterpreterCliSandboxWritableRoots(),
           allowTempAccess: process.platform === "darwin" ? runtimeAccess.macosTempAccess : true,
         });
     if (workspacePermission && !this.workspaceScopedThreads.has(params.threadId)) {
@@ -2774,7 +2760,9 @@ export class CodexAppServerClient {
         if (!name) continue;
         console.log(`[interpreter-server] syncMcpServers write start requestId=${requestId} server=${name}`);
         const url = server.transport === "websocket" ? server.wsUrl : server.url;
-        const timeouts = {
+        const sharedConfig = {
+          ...(server.auth && { auth: server.auth }),
+          enabled: true,
           ...(server.startupTimeoutSec !== undefined && {
             startupTimeoutSec: server.startupTimeoutSec,
           }),
@@ -2789,7 +2777,7 @@ export class CodexAppServerClient {
                 url,
                 ...(server.headers ? { httpHeaders: server.headers } : {}),
                 ...(server.oauthResource ? { oauthResource: server.oauthResource } : {}),
-                ...timeouts,
+                ...sharedConfig,
               },
             }
           : {
@@ -2799,7 +2787,7 @@ export class CodexAppServerClient {
                 command: server.command!,
                 ...(server.args ? { args: server.args } : {}),
                 ...(server.env ? { env: server.env } : {}),
-                ...timeouts,
+                ...sharedConfig,
               },
             };
         const toml = mcpServerEntryToToml(entry);

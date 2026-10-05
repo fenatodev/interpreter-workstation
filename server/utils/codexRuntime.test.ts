@@ -958,7 +958,7 @@ describe('resolveCodexProfileForStreamRequest', () => {
     expect(result.requestedModel).toBe('chat-compatible-model');
   });
 
-  test('defaults stored DeepSeek API profiles to Chat Completions', async () => {
+  test('defaults stored DeepSeek API profiles to Chat Completions and preserves env-key auth', async () => {
     setConfigOverride({
       agents: {},
       profiles: [
@@ -966,9 +966,9 @@ describe('resolveCodexProfileForStreamRequest', () => {
           id: 'custom:deepseek',
           name: 'DeepSeek',
           provider: 'api',
-          modelId: 'deepseek-v4-flash',
+          modelId: 'deepseek-flash',
           apiFormat: 'openai',
-          apiKey: 'sk-deepseek',
+          environmentKey: 'DEEPSEEK_API_KEY',
           baseURL: 'https://api.deepseek.com',
           codexProfileId: 'deepseek',
           isBuiltin: false,
@@ -988,7 +988,9 @@ describe('resolveCodexProfileForStreamRequest', () => {
     expect(result.profile.modelProvider).toBe(buildAppManagedModelProviderId('deepseek'));
     expect(result.profile.providerConfig?.base_url).toBe('https://api.deepseek.com');
     expect(result.profile.providerConfig?.wire_api).toBe('chat');
-    expect(result.requestedModel).toBe('deepseek-v4-flash');
+    expect(result.profile.providerConfig?.env_key).toBe('DEEPSEEK_API_KEY');
+    expect(result.profile.providerConfig?.experimental_bearer_token).toBeUndefined();
+    expect(result.requestedModel).toBe('deepseek-flash');
   });
 
   test('honors an explicit Responses selection for stored DeepSeek API profiles', async () => {
@@ -999,7 +1001,7 @@ describe('resolveCodexProfileForStreamRequest', () => {
           id: 'custom:deepseek-stale',
           name: 'DeepSeek',
           provider: 'api',
-          modelId: 'deepseek-v4-flash',
+          modelId: 'deepseek-flash',
           apiFormat: 'openai',
           apiKey: 'sk-deepseek',
           baseURL: 'https://api.deepseek.com',
@@ -1023,7 +1025,7 @@ describe('resolveCodexProfileForStreamRequest', () => {
     expect(result.profile.modelProvider).toBe(buildAppManagedModelProviderId('deepseek'));
     expect(result.profile.providerConfig?.base_url).toBe('https://api.deepseek.com');
     expect(result.profile.providerConfig?.wire_api).toBe('responses');
-    expect(result.requestedModel).toBe('deepseek-v4-flash');
+    expect(result.requestedModel).toBe('deepseek-flash');
   });
 
   test('keeps Claude-family custom API profiles on their configured Responses wire API', async () => {
@@ -1609,6 +1611,15 @@ describe('runCodexAgentTurn overlay continuation', () => {
   });
 
   test('strips caller-provided direct MCP servers from agent turn config', async () => {
+    setConfigOverride({
+      agents: {},
+      profiles: [],
+      providers: {},
+      mcpServers: {
+        'linux-computer-use': { id: 'linux-computer-use', enabled: true },
+        codex_apps: { id: 'codex_apps', enabled: true },
+      },
+    } as any);
     const runTurnCalls: Array<{ config: Record<string, any> | null | undefined }> = [];
     const fakeService = {
       async ensureProvider() {},
@@ -1645,7 +1656,10 @@ describe('runCodexAgentTurn overlay continuation', () => {
     });
 
     expect(runTurnCalls).toHaveLength(1);
-    expect(runTurnCalls[0]?.config?.mcp_servers).toEqual({});
+    expect(runTurnCalls[0]?.config?.mcp_servers).toEqual({
+      'linux-computer-use': { enabled: false },
+      codex_apps: { enabled: false },
+    });
   });
 
   test('preserves an explicit app-server harness for app-managed turns', async () => {
@@ -1765,6 +1779,15 @@ describe('runCodexAgentTurn overlay continuation', () => {
   });
 
   test('does not expose configured or disabled app tools as native model tools', async () => {
+    setConfigOverride({
+      agents: {},
+      profiles: [],
+      providers: {},
+      mcpServers: {
+        'linux-computer-use': { id: 'linux-computer-use', enabled: true },
+        codex_apps: { id: 'codex_apps', enabled: true },
+      },
+    } as any);
     const runTurnCalls: Array<{ config: Record<string, any> | null | undefined }> = [];
     const fakeService = {
       async ensureProvider() {},
@@ -1815,7 +1838,10 @@ describe('runCodexAgentTurn overlay continuation', () => {
     const serializedConfig = JSON.stringify(runTurnCalls[0]?.config ?? {});
 
     expect(runTurnCalls).toHaveLength(1);
-    expect(runTurnCalls[0]?.config?.mcp_servers).toEqual({});
+    expect(runTurnCalls[0]?.config?.mcp_servers).toEqual({
+      'linux-computer-use': { enabled: false },
+      codex_apps: { enabled: false },
+    });
     expect(serializedConfig).not.toContain('issue_942_huge_spreadsheet_tool');
     expect(serializedConfig).not.toContain('ISSUE_942_EAGER_TOOL_DESCRIPTION_SHOULD_NOT_REACH_MODEL');
     expect(serializedConfig).not.toContain('issue_942_disabled_tool');

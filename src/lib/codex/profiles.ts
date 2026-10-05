@@ -131,7 +131,7 @@ export const CUSTOM_PRESETS: readonly CustomPreset[] = [
     id: "deepseek",
     label: "DeepSeek",
     defaultBaseUrl: "https://api.deepseek.com",
-    defaultModel: "deepseek-v4-flash",
+    defaultModel: "deepseek-flash",
     requiresApiKey: true,
     wireApi: "chat",
   },
@@ -255,6 +255,7 @@ export function buildProfileFromPreset(
     environmentKey?: string;
     model?: string;
     wireApi?: WireApi;
+    harness?: string | null;
   },
 ): Profile {
   const baseUrl = overrides?.baseUrl || preset.defaultBaseUrl;
@@ -272,6 +273,7 @@ export function buildProfileFromPreset(
     label: preset.label,
     modelProvider,
     model,
+    ...(overrides?.harness !== undefined ? { harness: overrides.harness } : {}),
     providerConfig: baseUrl
         ? {
           base_url: baseUrl,

@@ -36,6 +36,7 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
   oauthResource?: string;
   wsUrl?: string;
+  auth?: 'oauth' | 'chatgpt' | 'ema_auth';
 
   // Status (stored in config for persistence)
   enabled: boolean;

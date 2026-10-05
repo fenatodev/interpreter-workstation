@@ -177,7 +177,7 @@ describe("codex profiles", () => {
     const preset = getCustomPreset("deepseek");
     assert.ok(preset, "deepseek preset should exist");
     assert.equal(preset.defaultBaseUrl, "https://api.deepseek.com");
-    assert.equal(preset.defaultModel, "deepseek-v4-flash");
+    assert.equal(preset.defaultModel, "deepseek-flash");
     assert.equal(preset.wireApi, "chat");
 
     const profile = buildProfileFromPreset(preset, { apiKey: "sk-deepseek" });

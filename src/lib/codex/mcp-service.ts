@@ -16,7 +16,10 @@ import { getMcpCodexClient } from "./service";
 const VALID_SERVER_NAME = /^[a-zA-Z0-9_-]+$/;
 const TOOL_LIST_STATUS_DETAIL: NonNullable<McpServerStatusListParams["detail"]> =
   "toolsAndAuthOnly";
-const MCP_STATUS_LIST_TIMEOUT_MS = 12_000;
+// Codex Apps can expose ~180+ tools; the app-server status payload can legitimately
+// take a little over 12s to hydrate on cold start. Keep a bounded timeout, but
+// leave enough headroom so a healthy large MCP does not get downgraded to disconnected.
+const MCP_STATUS_LIST_TIMEOUT_MS = 30_000;
 let mcpServiceListServersRequestId = 0;
 let mcpServiceAuthStatusListRequestId = 0;
 
