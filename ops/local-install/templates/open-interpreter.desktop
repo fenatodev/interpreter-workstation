@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Open Interpreter
+Comment=Open Interpreter Workstation
+Exec=__HOME__/.local/bin/open-interpreter-workstation
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true

@@ -1,0 +1,30 @@
+{
+  "known_good_tag": "known-good-2026-10-05-restore-ready",
+  "branch": "interpreter-stable",
+  "versions": {
+    "node": "v22.23.3",
+    "pnpm": "9.15.9",
+    "bun": "1.4.2",
+    "gh": "2.102.0",
+    "interpreter_cli": "0.0.55",
+    "computer_use_linux": "0.7.10"
+  },
+  "sha256": {
+    "interpreter_cli": "7eab0cb9e9bca5e08efaa029e062887b8a220019560792d54c0af465227e3237",
+    "computer_use_linux_x86_64_unknown_linux_gnu": "e292e884dec1579b8caf958eb87c68ccf4d9e10f7caaf7c51b001f997b52a431"
+  },
+  "defaults": {
+    "codex_apps_enabled": false,
+    "linux_computer_use_enabled": true,
+    "whatsapp_requires_relink": true,
+    "github_requires_gh_auth": true,
+    "deepseek_secret_file": "~/.openinterpreter/secrets/deepseek.env"
+  },
+  "sources": {
+    "oix": "openinterpreter/openinterpreter release rust-v0.0.55 via scripts/download-oix.mjs",
+    "computer_use_linux": "agent-sh/computer-use-linux v0.7.10",
+    "gh": "cli/cli v2.102.0",
+    "bun": "oven-sh/bun bun-v1.4.2",
+    "node": "nodejs.org/dist/v22.23.3"
+  }
+}

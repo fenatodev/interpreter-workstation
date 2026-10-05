@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -e
+repo="${INTERPRETER_ROOT:-/mnt/infra/apps/interpreter-workstation}"
+cd "$repo"
+
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+
+# Load API credentials from local secret files.
+if [ -f "$HOME/.openinterpreter/secrets/deepseek.env" ]; then
+  set -a
+  . "$HOME/.openinterpreter/secrets/deepseek.env"
+  set +a
+fi
+
+export INTERPRETER_USE_BUILT_RENDERER=true
+export SHOW_WINDOW=1
+# Main-window geometry is restored by Electron from the last user-adjusted
+# session. Do not set WINDOW_X/Y/WIDTH/HEIGHT here or it overrides persistence.
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+
+# Recover the active graphical-session environment when launched outside GNOME.
+if [ -z "${DISPLAY:-}" ] || [ -z "${XAUTHORITY:-}" ]; then
+  for envfile in /proc/[0-9]*/environ; do
+    [ -r "$envfile" ] || continue
+    vals="$(tr '\0' '\n' < "$envfile" 2>/dev/null | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY)=' || true)"
+    echo "$vals" | grep -q '^DISPLAY=' || continue
+    echo "$vals" | grep -q '^XAUTHORITY=' || continue
+    while IFS='=' read -r k v; do
+      case "$k" in
+        DISPLAY|WAYLAND_DISPLAY|XAUTHORITY) export "$k=$v" ;;
+      esac
+    done <<< "$vals"
+    break
+  done
+fi
+
+state_dir="$HOME/.local/state/open-interpreter"
+mkdir -p "$state_dir"
+
+proxy_pid=""
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  if ! curl -fsS --max-time 2 "http://127.0.0.1:1253/models" >/dev/null 2>&1; then
+    node "$HOME/.local/lib/deepseek-responses-proxy.mjs" >>"$state_dir/deepseek-proxy.log" 2>&1 &
+    proxy_pid=$!
+    for _ in {1..20}; do
+      if curl -fsS --max-time 2 "http://127.0.0.1:1253/models" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.2
+    done
+  fi
+fi
+
+cleanup() {
+  if [ -n "$proxy_pid" ]; then
+    kill "$proxy_pid" 2>/dev/null || true
+    wait "$proxy_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+pnpm start >>"$state_dir/launcher.log" 2>&1
