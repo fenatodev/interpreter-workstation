@@ -1,5 +1,5 @@
 {
-  "known_good_tag": "known-good-2026-10-05-voice-ready",
+  "known_good_tag": "known-good-2026-10-05-voice-working",
   "branch": "interpreter-stable",
   "versions": {
     "node": "v22.23.3",

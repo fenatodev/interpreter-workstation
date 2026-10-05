@@ -1913,23 +1913,24 @@ export const ComposerArea = React.forwardRef<BaseTiptapComposerRef, ComposerArea
 
     try {
       const result = await interpreterOverlay.startWindowVoiceMode({ selectedText });
-      if (!result.success) {
-        showToast(result.error ?? 'Could not start Interpreter Overlay voice mode.', 'error', 8000);
-      } else {
+      if (result.success) {
         emitVoiceLatencyEvent('overlay-window-voice-started', {
           surface: 'main-composer',
           selectedTextLength: selectedText?.length ?? 0,
         });
+        if (isMountedRef.current) {
+          setIsVoiceModeStarting(false);
+        }
+        return;
       }
+      console.info('[VoiceMode] Interpreter Overlay unavailable; falling back to native composer voice mode.', {
+        error: result.error ?? null,
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      showToast(`Could not start Interpreter Overlay voice mode. ${message}`, 'error', 8000);
-    } finally {
-      if (isMountedRef.current) {
-        setIsVoiceModeStarting(false);
-      }
+      console.info('[VoiceMode] Interpreter Overlay failed; falling back to native composer voice mode.', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    return;
 
     if (!resumeAfterInstall) {
       const requirement = await loadVoiceModelRequirement();

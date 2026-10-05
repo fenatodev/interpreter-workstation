@@ -33,7 +33,7 @@ QWEN_SHA_MODEL="79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea
 QWEN_SHA_VOCAB="ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
 QWEN_SHA_MERGES="8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
 TTS_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
-EXPECTED_TAG="known-good-2026-10-05-voice-ready"
+EXPECTED_TAG="known-good-2026-10-05-voice-working"
 
 log() { printf "[restore] %s\n" "$*"; }
 die() { printf "[restore] ERROR: %s\n" "$*" >&2; exit 1; }
