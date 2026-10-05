@@ -1184,11 +1184,22 @@ export class ToolManager {
         return;
       }
 
-      // Otherwise, it's an MCP server
-      if (enabled) {
-        await this.startServer(serverId);
-      } else {
-        await this.stopServer(serverId);
+      // Otherwise, it's an MCP server. Keep the global agent-visible
+      // switch and the MCP runtime lifecycle as one atomic operation so the UI
+      // cannot end up "globally disabled" while the persisted MCP stays enabled
+      // (or the reverse). The start/stop path broadcasts the hydrated status.
+      const previousGlobalEnabled = await configStore.isBuiltinToolEnabled(serverId);
+      await configStore.setBuiltinToolEnabled(serverId, enabled);
+      try {
+        if (enabled) {
+          await this.startServer(serverId);
+        } else {
+          await this.stopServer(serverId);
+        }
+      } catch (error) {
+        await configStore.setBuiltinToolEnabled(serverId, previousGlobalEnabled);
+        await this.broadcastChanges();
+        throw error;
       }
 
       console.log(

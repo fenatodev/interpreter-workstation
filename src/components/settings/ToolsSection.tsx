@@ -422,30 +422,29 @@ export function ToolsSectionContent() {
     })();
   }, [formatMcpErrorMessage, setOAuthPending, showToast, waitForOAuthResolution]);
 
-  // Handle global tool enable/disable.
-  // MCP cards represent both agent visibility and the actual MCP runtime lifecycle.
-  // Keep those layers synchronized so re-enabling a server reconnects/hydrates its
-  // catalog instead of leaving the UI on a disconnected 0-tools snapshot.
+  // Settings exposes one switch per installed tool server. For MCPs,
+  // delegate the whole operation to toolServers.toggle(), which now owns both
+  // the runtime lifecycle and global agent visibility. Built-ins only need the
+  // global visibility bit. Clear the optimistic override after the awaited
+  // backend operation because the backend broadcasts the authoritative state
+  // before resolving.
   const handleGlobalToggle = useCallback(async (toolId: string, enabled: boolean) => {
     setOptimisticGlobalEnabled(toolId, enabled);
     const server = toolServers.find((candidate) => candidate.id === toolId);
     const isMcpServer = server ? !server.id.startsWith('builtin-') : false;
 
     try {
-      if (isMcpServer && enabled) {
-        await toolServersIpc.toggle(toolId, true);
-        await globalTools.set(toolId, true);
-      } else if (isMcpServer) {
-        await globalTools.set(toolId, false);
-        await toolServersIpc.toggle(toolId, false);
+      if (isMcpServer) {
+        await toolServersIpc.toggle(toolId, enabled);
       } else {
         await globalTools.set(toolId, enabled);
       }
+      setOptimisticGlobalEnabled(toolId, null);
     } catch (error) {
       console.error('Failed to toggle global tool state:', error);
       setOptimisticGlobalEnabled(toolId, null);
     }
-  }, [setOptimisticGlobalEnabled, toolServers]);
+  }, [toolServers]);
 
   async function handleDeleteToolServer(toolId: string) {
     if (confirmingDeleteTool === toolId) {

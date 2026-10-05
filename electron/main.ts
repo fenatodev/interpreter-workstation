@@ -2204,11 +2204,76 @@ async function createWindow(options?: CreateWindowOptions): Promise<CreateWindow
     height: Math.round(defaultWorkArea.height * 0.92),
   };
 
-  // Allow env vars to set initial window geometry (used by demo scripts)
-  const initX = process.env.WINDOW_X ? parseInt(process.env.WINDOW_X, 10) : undefined;
-  const initY = process.env.WINDOW_Y ? parseInt(process.env.WINDOW_Y, 10) : undefined;
-  const initWidth = process.env.WINDOW_WIDTH ? parseInt(process.env.WINDOW_WIDTH, 10) : defaultWindowBounds.width;
-  const initHeight = process.env.WINDOW_HEIGHT ? parseInt(process.env.WINDOW_HEIGHT, 10) : defaultWindowBounds.height;
+  const hasExplicitWindowGeometry = Boolean(
+    process.env.WINDOW_X
+    || process.env.WINDOW_Y
+    || process.env.WINDOW_WIDTH
+    || process.env.WINDOW_HEIGHT,
+  );
+  const shouldPersistMainWindowBounds =
+    isPrimaryWindow
+    && options?.background !== true
+    && !isTest
+    && !hideForFormTests
+    && !hasExplicitWindowGeometry;
+  const mainWindowStatePath = path.join(app.getPath('userData'), 'main-window-state.json');
+
+  type PersistedMainWindowState = {
+    bounds: { x: number; y: number; width: number; height: number };
+    maximized?: boolean;
+  };
+
+  const loadPersistedMainWindowState = (): PersistedMainWindowState | null => {
+    if (!shouldPersistMainWindowBounds) return null;
+
+    try {
+      const raw = fs.readFileSync(mainWindowStatePath, 'utf8');
+      const parsed = JSON.parse(raw) as PersistedMainWindowState;
+      const candidate = parsed?.bounds;
+      if (
+        !candidate
+        || !Number.isFinite(candidate.x)
+        || !Number.isFinite(candidate.y)
+        || !Number.isFinite(candidate.width)
+        || !Number.isFinite(candidate.height)
+        || candidate.width < 320
+        || candidate.height < 220
+      ) {
+        return null;
+      }
+
+      const display = screen.getDisplayMatching(candidate);
+      const workArea = display.workArea;
+      const width = Math.min(Math.max(Math.round(candidate.width), 320), workArea.width);
+      const height = Math.min(Math.max(Math.round(candidate.height), 220), workArea.height);
+      const maxX = workArea.x + workArea.width - width;
+      const maxY = workArea.y + workArea.height - height;
+      const x = Math.min(Math.max(Math.round(candidate.x), workArea.x), maxX);
+      const y = Math.min(Math.max(Math.round(candidate.y), workArea.y), maxY);
+
+      return {
+        bounds: { x, y, width, height },
+        maximized: parsed.maximized === true,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const persistedMainWindowState = loadPersistedMainWindowState();
+  const restoredWindowBounds = persistedMainWindowState?.bounds ?? defaultWindowBounds;
+
+  // Allow env vars to set initial window geometry (used by demo scripts).
+  // Outside those explicit overrides, the primary window restores its last
+  // user-adjusted bounds from the previous session.
+  const initX = process.env.WINDOW_X
+    ? parseInt(process.env.WINDOW_X, 10)
+    : (hasExplicitWindowGeometry ? undefined : restoredWindowBounds.x);
+  const initY = process.env.WINDOW_Y
+    ? parseInt(process.env.WINDOW_Y, 10)
+    : (hasExplicitWindowGeometry ? undefined : restoredWindowBounds.y);
+  const initWidth = process.env.WINDOW_WIDTH ? parseInt(process.env.WINDOW_WIDTH, 10) : restoredWindowBounds.width;
+  const initHeight = process.env.WINDOW_HEIGHT ? parseInt(process.env.WINDOW_HEIGHT, 10) : restoredWindowBounds.height;
   const macWindowAppearance = getMacWindowAppearance({
     platform: process.platform,
     disableMacTransparencyEnv: process.env.INTERPRETER_DISABLE_MAC_TRANSPARENCY,
@@ -2271,6 +2336,56 @@ async function createWindow(options?: CreateWindowOptions): Promise<CreateWindow
       ],
     },
   });
+
+  if (shouldPersistMainWindowBounds) {
+    let persistTimer: NodeJS.Timeout | undefined;
+
+    const persistMainWindowState = () => {
+      if (window.isDestroyed()) return;
+
+      const bounds = window.getNormalBounds();
+      const payload: PersistedMainWindowState = {
+        bounds: {
+          x: Math.round(bounds.x),
+          y: Math.round(bounds.y),
+          width: Math.round(bounds.width),
+          height: Math.round(bounds.height),
+        },
+        maximized: window.isMaximized(),
+      };
+
+      try {
+        fs.mkdirSync(path.dirname(mainWindowStatePath), { recursive: true });
+        const tempPath = `${mainWindowStatePath}.tmp`;
+        fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf8');
+        fs.renameSync(tempPath, mainWindowStatePath);
+      } catch (error) {
+        console.warn('[Main] Failed to persist main window bounds:', error);
+      }
+    };
+
+    const schedulePersistMainWindowState = () => {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(persistMainWindowState, 250);
+    };
+
+    window.on('move', schedulePersistMainWindowState);
+    window.on('resize', schedulePersistMainWindowState);
+    window.on('maximize', schedulePersistMainWindowState);
+    window.on('unmaximize', schedulePersistMainWindowState);
+    window.on('close', persistMainWindowState);
+    window.on('closed', () => {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = undefined;
+    });
+
+    if (persistedMainWindowState?.maximized) {
+      window.once('ready-to-show', () => {
+        if (!window.isDestroyed()) window.maximize();
+      });
+    }
+  }
+
   const windowId = window.id;
   const webContentsId = window.webContents.id;
   if (shouldKeepMainWindowHiddenForHeadlessRuns()) {

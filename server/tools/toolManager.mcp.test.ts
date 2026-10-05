@@ -130,7 +130,7 @@ import { refreshMcpToolsTool } from './builtin-tools/mcp-management/refreshMcpTo
 import { toggleMcpServerTool } from './builtin-tools/mcp-management/toggleMcpServerTool';
 import { updateMcpServerTool } from './builtin-tools/mcp-management/updateMcpServerTool';
 import { approvalManager } from '../approvalManager';
-import { clearConfigCache, getMcpServer, setConfigOverride } from '../configStore';
+import { clearConfigCache, getMcpServer, isBuiltinToolEnabled, setConfigOverride } from '../configStore';
 import { rememberToolCallMetadata } from '../utils/codexMcpBridge';
 import { getLatestToolServersChangedEvent } from '../utils/ipcBridge';
 import { runWithWindowSessionOverride } from '../utils/windowSessions';
@@ -544,6 +544,35 @@ describe('ToolManager MCP integration', () => {
     await manager.stopServer('test-mcp');
 
     expect(mockListServers).not.toHaveBeenCalled();
+  });
+
+  test('toggleToolServer keeps MCP runtime and global visibility synchronized', async () => {
+    setConfigOverride({
+      agents: {},
+      builtinToolsEnabled: { 'test-mcp': true },
+      mcpServers: {
+        'test-mcp': {
+          id: 'test-mcp',
+          name: 'Test MCP',
+          transport: 'http',
+          url: 'https://test.example.com/mcp',
+          enabled: true,
+          createdAt: 1,
+        },
+      },
+    } as any);
+
+    const manager = new ToolManager();
+
+    await manager.toggleToolServer('test-mcp', false);
+    expect(mockDisableServer).toHaveBeenCalledWith('test-mcp');
+    expect(await isBuiltinToolEnabled('test-mcp')).toBe(false);
+    expect((await getMcpServer('test-mcp'))?.enabled).toBe(false);
+
+    await manager.toggleToolServer('test-mcp', true);
+    expect(mockEnableServer).toHaveBeenCalledWith('test-mcp');
+    expect(await isBuiltinToolEnabled('test-mcp')).toBe(true);
+    expect((await getMcpServer('test-mcp'))?.enabled).toBe(true);
   });
 
   test('restartServer disables then enables', async () => {

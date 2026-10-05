@@ -422,7 +422,7 @@ describe('ToolsSectionContent', () => {
         },
       },
     ];
-    ipcMocks.globalTools.set.mockImplementationOnce(
+    ipcMocks.toolServers.toggle.mockImplementationOnce(
       () =>
         new Promise<{ success: boolean }>((resolve) => {
           resolveGlobalToggle = () => resolve({ success: true });
@@ -433,13 +433,11 @@ describe('ToolsSectionContent', () => {
 
     await user.click(screen.getByRole('switch', { name: 'Disable Sentry globally' }));
 
-    expect(ipcMocks.globalTools.set).toHaveBeenCalledWith('sentry', false);
+    expect(ipcMocks.toolServers.toggle).toHaveBeenCalledWith('sentry', false);
+    expect(ipcMocks.globalTools.set).not.toHaveBeenCalled();
     expect(screen.getByRole('switch', { name: 'Enable Sentry globally' })).toBeVisible();
 
     resolveGlobalToggle?.();
-    await waitFor(() => {
-      expect(ipcMocks.toolServers.toggle).toHaveBeenCalledWith('sentry', false);
-    });
   });
 
   test('starts MCP OAuth from an auth-required tool card and opens the browser', async () => {
