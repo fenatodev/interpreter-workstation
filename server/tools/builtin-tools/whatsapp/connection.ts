@@ -23,9 +23,9 @@ import { mkdir } from 'node:fs/promises';
 import {
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
   makeWASocket,
-  useLegacyMultiFileAuthState as useMultiFileAuthState,
+  useLegacyMultiFileAuthState,
+  useMultiFileAuthState,
   isJidGroup,
   type WASocket,
   type WAMessage,
@@ -38,6 +38,7 @@ import {
   deleteCredentials,
   enqueueSaveCreds,
   maybeRestoreCredsFromBackup,
+  hasAuthState,
 } from './credentials';
 import { extractMessageBody, describeReplyContext } from './extract';
 import { isIgnoredJid } from './normalize';
@@ -363,14 +364,17 @@ export async function initializeSocket(): Promise<void> {
   maybeRestoreCredsFromBackup();
 
   const logger = pino({ level: 'silent' });
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const { state, saveCreds } = hasAuthState()
+    ? await useLegacyMultiFileAuthState(AUTH_DIR)
+    : await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
-    },
+    // baileyrs native auth state carries a bridge store in addition to the
+    // upstream-compatible creds/keys mirror. Passing only {creds, keys}
+    // makes the bridge treat a fresh setup as legacy auth and require
+    // creds.json, which breaks first-time QR pairing.
+    auth: state,
     version,
     logger,
     printQRInTerminal: false,

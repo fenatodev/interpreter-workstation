@@ -4,6 +4,7 @@
  */
 
 import type { BuiltinToolDefinition } from '../../builtinTools';
+import { approvalManager } from '../../../approvalManager';
 import { getSocket, getConnectionState } from './connection';
 import { sendWhatsAppMessageWithRetry } from './outbound';
 import { rejectIfInternalContext } from '../../../utils/contentGuard.js';
@@ -29,7 +30,7 @@ export const sendMessageTool: BuiltinToolDefinition = {
     readOnlyHint: false,
     destructiveHint: false,
   },
-  handler: async (args) => {
+  handler: async (args, context) => {
     try {
       if (getConnectionState() !== 'connected') {
         return {
@@ -58,6 +59,24 @@ export const sendMessageTool: BuiltinToolDefinition = {
 
       const contextRejection = rejectIfInternalContext(message);
       if (contextRejection) return contextRejection;
+
+      const approved = await approvalManager.createApproval(
+        'whatsapp_send_message',
+        'builtin-whatsapp',
+        { chat_id: chatId, message },
+        120_000,
+        context?.toolCallId,
+        context?.agentId,
+      );
+      if (!approved) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: false, denied: true, chatId }),
+          }],
+          isError: false,
+        };
+      }
 
       const result = await sendWhatsAppMessageWithRetry({
         sock,

@@ -49,6 +49,7 @@ const ipcMocks = vi.hoisted(() => ({
   },
   toolServers: {
     onChanged: vi.fn<(callback: (event: ToolServersChangedEvent) => void) => () => void>(() => () => {}),
+    toggle: vi.fn(async () => ({ success: true })),
   },
   setup: {
     onCompleted: vi.fn<(callback: (event: SetupCompletedEvent) => void) => () => void>(() => () => {}),
@@ -436,6 +437,9 @@ describe('ToolsSectionContent', () => {
     expect(screen.getByRole('switch', { name: 'Enable Sentry globally' })).toBeVisible();
 
     resolveGlobalToggle?.();
+    await waitFor(() => {
+      expect(ipcMocks.toolServers.toggle).toHaveBeenCalledWith('sentry', false);
+    });
   });
 
   test('starts MCP OAuth from an auth-required tool card and opens the browser', async () => {
