@@ -1,5 +1,5 @@
 {
-  "known_good_tag": "known-good-2026-10-05-voice-working",
+  "known_good_tag": "known-good-2026-10-05-voice-stable",
   "branch": "interpreter-stable",
   "versions": {
     "node": "v22.23.3",
@@ -32,7 +32,10 @@
     "tts_model_id": "kokoro-pt_BR-dora-v1_0",
     "tts_voice_id": 42,
     "tts_voice_label": "Dora (pt-BR, feminina)",
-    "edge_browser_control_extension_requires_human_confirmation": true
+    "edge_browser_control_extension_requires_human_confirmation": true,
+    "qwen_asr_language": "Portuguese",
+    "qwen_asr_prompt_profile": "pt-BR proper nouns/cities/technical terms",
+    "deepseek_proxy_supervision": "systemd-user with launcher fallback"
   },
   "sources": {
     "oix": "openinterpreter/openinterpreter release rust-v0.0.55 via scripts/download-oix.mjs",

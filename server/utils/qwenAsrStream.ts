@@ -545,7 +545,11 @@ export async function startQwenAsrStreamSession(options?: StartStreamSessionOpti
     const { binaryPath, modelDir } = await resolveBundledQwenPaths();
     const extraArgsRaw = process.env.QWEN_ASR_STREAM_EXTRA_ARGS?.trim();
     const extraArgs = extraArgsRaw ? extraArgsRaw.split(/\s+/).filter(Boolean) : [];
-    const args = ['-d', modelDir, '--stdin', '--stream', ...DEFAULT_STREAM_ARGS, ...extraArgs];
+    const forcedLanguage = process.env.QWEN_ASR_LANGUAGE?.trim();
+    const languageArgs = forcedLanguage ? ['--language', forcedLanguage] : [];
+    const prompt = process.env.QWEN_ASR_PROMPT?.trim();
+    const promptArgs = prompt ? ['--prompt', prompt] : [];
+    const args = ['-d', modelDir, '--stdin', '--stream', ...DEFAULT_STREAM_ARGS, ...languageArgs, ...promptArgs, ...extraArgs];
 
     qwenBinaryPath = binaryPath;
     qwenArgs = args;

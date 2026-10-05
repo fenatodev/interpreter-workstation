@@ -150,8 +150,12 @@ async function runQwenAsrCli(wavPath: string): Promise<string> {
 
   const extraArgsRaw = process.env.QWEN_ASR_EXTRA_ARGS?.trim();
   const extraArgs = extraArgsRaw ? extraArgsRaw.split(/\s+/).filter(Boolean) : [];
+  const forcedLanguage = process.env.QWEN_ASR_LANGUAGE?.trim();
+  const languageArgs = forcedLanguage ? ['--language', forcedLanguage] : [];
+  const prompt = process.env.QWEN_ASR_PROMPT?.trim();
+  const promptArgs = prompt ? ['--prompt', prompt] : [];
 
-  const args = ['-d', modelDir, '-i', wavPath, '-S', '0', ...extraArgs];
+  const args = ['-d', modelDir, '-i', wavPath, '-S', '0', ...languageArgs, ...promptArgs, ...extraArgs];
 
   const child = spawn(binaryPath, args, {
     stdio: ['ignore', 'pipe', 'pipe'],

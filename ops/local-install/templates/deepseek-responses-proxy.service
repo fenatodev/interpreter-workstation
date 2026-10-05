@@ -1,0 +1,16 @@
+[Unit]
+Description=DeepSeek Responses proxy for Interpreter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=__HOME__/.openinterpreter/secrets/deepseek.env
+Environment=DEEPSEEK_PROXY_PORT=1253
+ExecStart=__NODE__ __HOME__/.local/lib/deepseek-responses-proxy.mjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

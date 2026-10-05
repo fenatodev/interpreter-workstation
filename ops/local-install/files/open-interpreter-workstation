@@ -4,6 +4,8 @@ repo="${INTERPRETER_ROOT:-/mnt/infra/apps/interpreter-workstation}"
 cd "$repo"
 
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+export QWEN_ASR_LANGUAGE="${QWEN_ASR_LANGUAGE:-Portuguese}"
+export QWEN_ASR_PROMPT="${QWEN_ASR_PROMPT:-Português do Brasil. Preserve nomes próprios, cidades brasileiras e termos técnicos. Grafias relevantes: Taubaté, DeepSeek, GitHub, Interpreter, Open Interpreter, Qwen, WhatsApp, business-automation.}"
 
 # qwen-asr is linked against OpenBLAS. Prefer the user-space copy prepared
 # by the restore kit so voice input works without a system-wide package.

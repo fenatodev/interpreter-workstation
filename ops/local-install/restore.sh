@@ -33,7 +33,7 @@ QWEN_SHA_MODEL="79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea
 QWEN_SHA_VOCAB="ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
 QWEN_SHA_MERGES="8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
 TTS_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
-EXPECTED_TAG="known-good-2026-10-05-voice-working"
+EXPECTED_TAG="known-good-2026-10-05-voice-stable"
 
 log() { printf "[restore] %s\n" "$*"; }
 die() { printf "[restore] ERROR: %s\n" "$*" >&2; exit 1; }
@@ -51,6 +51,11 @@ if [[ "$MODE" == "check" ]]; then
   [[ -x "$LOCAL_BIN/computer-use-linux" ]] && "$LOCAL_BIN/computer-use-linux" doctor >/dev/null 2>&1 && log "computer-use-linux=ok" || log "computer-use-linux=missing-or-not-ready"
   [[ -x "$LOCAL_BIN/gh" ]] && "$LOCAL_BIN/gh" auth status -h github.com >/dev/null 2>&1 && log "gh=authenticated" || log "gh=needs-auth"
   [[ -s "$SECRET_FILE" ]] && log "deepseek-secret=present" || log "deepseek-secret=needs-restore"
+  if curl -fsS --max-time 3 http://127.0.0.1:1253/models >/dev/null 2>&1; then
+    log "deepseek-proxy=ready"
+  else
+    log "deepseek-proxy=not-ready"
+  fi
   [[ -f "$CONFIG_DIR/main-window-state.json" ]] && log "window-state=present" || log "window-state=will-be-created-on-use"
   CHECK_OPENBLAS="$ROOT/.local-sysroot/usr/lib/x86_64-linux-gnu/openblas-pthread"
   CHECK_SYSROOT_LIB="$ROOT/.local-sysroot/usr/lib/x86_64-linux-gnu"
@@ -240,6 +245,23 @@ install -m 0755 "$TMP/gh_${GH_VERSION}_linux_amd64/bin/gh" "$LOCAL_BIN/gh"
 log "installing launcher, desktop entry and DeepSeek proxy"
 install -m 0755 "$KIT/files/open-interpreter-workstation" "$LOCAL_BIN/open-interpreter-workstation"
 install -m 0644 "$KIT/files/deepseek-responses-proxy.mjs" "$LOCAL_LIB/deepseek-responses-proxy.mjs"
+
+NODE_BIN="$(command -v node)"
+USER_SYSTEMD_DIR="$HOME_DIR/.config/systemd/user"
+mkdir -p "$USER_SYSTEMD_DIR"
+sed -e "s|__HOME__|$HOME_DIR|g" -e "s|__NODE__|$NODE_BIN|g" \
+  "$KIT/templates/deepseek-responses-proxy.service" \
+  > "$USER_SYSTEMD_DIR/deepseek-responses-proxy.service"
+chmod 0644 "$USER_SYSTEMD_DIR/deepseek-responses-proxy.service"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+if command -v systemctl >/dev/null 2>&1 && systemctl --user daemon-reload >/dev/null 2>&1; then
+  systemctl --user enable --now deepseek-responses-proxy.service >/dev/null 2>&1 \
+    || log "DeepSeek proxy service could not be started; launcher fallback will be used"
+else
+  log "user systemd unavailable; launcher fallback will be used for DeepSeek proxy"
+fi
+
 mkdir -p "$HOME_DIR/.local/share/applications"
 sed "s|__HOME__|$HOME_DIR|g" "$KIT/templates/open-interpreter.desktop" > "$HOME_DIR/.local/share/applications/open-interpreter.desktop"
 chmod 0644 "$HOME_DIR/.local/share/applications/open-interpreter.desktop"

@@ -5,15 +5,16 @@ This directory reproduces the known-good Ubuntu workstation setup without storin
 ## Exact reference
 
 - Branch: `interpreter-stable`
-- Restore-ready tag: `known-good-2026-10-05-voice-working`
+- Restore-ready tag: `known-good-2026-10-05-voice-stable`
 - Open Interpreter/OIX: 0.0.55
 - Linux Computer Use: 0.7.10
 - Node: 22.23.3
 - pnpm: 9.15.9
 - Bun: 1.4.2
 - GitHub CLI: 2.102.0
-- STT: Qwen3-ASR-0.6B local (Push-to-Talk)
+- STT: Qwen3-ASR-0.6B local (Push-to-Talk), forced Portuguese with pt-BR lexical bias
 - TTS: Kokoro Dora pt-BR, speaker 42, local CPU
+- DeepSeek proxy: supervised user service with automatic restart
 
 ## Fresh restore
 
@@ -24,7 +25,7 @@ mkdir -p /mnt/infra/apps
 git clone --branch interpreter-stable https://github.com/fenatodev/interpreter-workstation.git /mnt/infra/apps/interpreter-workstation
 cd /mnt/infra/apps/interpreter-workstation
 git fetch --tags
-git reset --hard known-good-2026-10-05-voice-working
+git reset --hard known-good-2026-10-05-voice-stable
 ./ops/local-install/restore.sh apply
 ```
 
