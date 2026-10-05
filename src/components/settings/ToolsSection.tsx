@@ -21,7 +21,7 @@ import { DetailListHeader } from '../ui/detail-list';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { globalTools, openExternal, providers, setup, toolServers as toolServersIpc } from '../../ipc';
-import { addToolServer, getToolServer, startToolServerOAuth, toolServerNeedsAuth, type ToolServer } from '../../api';
+import { addToolServer, getToolServer, startToolServerOAuth, toggleToolServer, toolServerNeedsAuth, type ToolServer } from '../../api';
 import { isInterpreterCliServerVisible } from '../../../shared/utils/interpreterToolSurface';
 import { cn } from '@/lib/utils';
 
@@ -435,7 +435,7 @@ export function ToolsSectionContent() {
 
     try {
       if (isMcpServer) {
-        await toolServersIpc.toggle(toolId, enabled);
+        await toggleToolServer(toolId, enabled);
       } else {
         await globalTools.set(toolId, enabled);
       }

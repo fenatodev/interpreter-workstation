@@ -31,6 +31,7 @@ const apiMocks = vi.hoisted(() => ({
   getToolServer: vi.fn(),
   listAllToolServers: vi.fn(async () => ({ servers: [] })),
   startToolServerOAuth: vi.fn(),
+  toggleToolServer: vi.fn(),
 }));
 
 const ipcMocks = vi.hoisted(() => ({
@@ -78,6 +79,7 @@ vi.mock('../../api', () => ({
   getToolServer: apiMocks.getToolServer,
   listAllToolServers: apiMocks.listAllToolServers,
   startToolServerOAuth: apiMocks.startToolServerOAuth,
+  toggleToolServer: apiMocks.toggleToolServer,
   toolServerNeedsAuth: (server: { state: { status: string; needsAuth?: boolean } }) =>
     server.state.status === 'failed' && server.state.needsAuth === true,
 }));
@@ -422,10 +424,10 @@ describe('ToolsSectionContent', () => {
         },
       },
     ];
-    ipcMocks.toolServers.toggle.mockImplementationOnce(
+    apiMocks.toggleToolServer.mockImplementationOnce(
       () =>
-        new Promise<{ success: boolean }>((resolve) => {
-          resolveGlobalToggle = () => resolve({ success: true });
+        new Promise<void>((resolve) => {
+          resolveGlobalToggle = () => resolve();
         }),
     );
 
@@ -433,7 +435,7 @@ describe('ToolsSectionContent', () => {
 
     await user.click(screen.getByRole('switch', { name: 'Disable Sentry globally' }));
 
-    expect(ipcMocks.toolServers.toggle).toHaveBeenCalledWith('sentry', false);
+    expect(apiMocks.toggleToolServer).toHaveBeenCalledWith('sentry', false);
     expect(ipcMocks.globalTools.set).not.toHaveBeenCalled();
     expect(screen.getByRole('switch', { name: 'Enable Sentry globally' })).toBeVisible();
 
