@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
+  appendModelSpecificResponseStyle,
   buildStructuredAgentRuntimeLogEvent,
   ensureOpenAIOAuthAccountReady,
   formatStructuredAgentRuntimeLogLine,
@@ -55,6 +56,16 @@ afterEach(() => {
   for (const callerToken of TEST_CALLER_TOKENS) {
     agentTabManager.disposeBinding(callerToken);
   }
+});
+
+describe('appendModelSpecificResponseStyle', () => {
+  test('keeps DeepSeek Flash concise without changing other models', () => {
+    const base = 'Base developer instructions.';
+    const deepseek = appendModelSpecificResponseStyle(base, 'deepseek-flash');
+    expect(deepseek).toContain('## DeepSeek Flash response style');
+    expect(deepseek).toContain('shortest complete answer');
+    expect(appendModelSpecificResponseStyle(base, 'gpt-5.6-sol')).toBe(base);
+  });
 });
 
 describe('selectAgentRuntimeLogEvent', () => {
@@ -1570,6 +1581,53 @@ describe('runCodexAgentTurn overlay continuation', () => {
     expect(runTurnCalls).toHaveLength(1);
     expect(runTurnCalls[0]?.skills).toEqual(explicitSkills);
     expect(runTurnCalls[0]?.developerInstructions).toContain('repo-review');
+  });
+
+  test('forces low verbosity and concise developer instructions for DeepSeek Flash', async () => {
+    const runTurnCalls: Array<{
+      config: Record<string, any> | null | undefined;
+      developerInstructions?: string;
+    }> = [];
+    const fakeService = {
+      async ensureProvider() {},
+      async runTurn(options: any) {
+        runTurnCalls.push({
+          config: options.config,
+          developerInstructions: options.developerInstructions,
+        });
+        return {
+          threadId: 'thread-deepseek-concise-1',
+          turnId: 'turn-deepseek-concise-1',
+          status: 'completed',
+        };
+      },
+    } as any;
+
+    await runCodexAgentTurn({
+      service: fakeService,
+      profile: {
+        label: 'DeepSeek Flash',
+        modelProvider: 'interpreter-app-deepseek-test',
+        model: 'deepseek-flash',
+        providerConfig: {
+          base_url: 'http://127.0.0.1:1253',
+          name: 'DeepSeek',
+          requires_openai_auth: false,
+          wire_api: 'responses',
+        },
+      } as any,
+      workspacePath: '/tmp/workspace',
+      message: 'Responda curto.',
+      binding: {
+        agentId: 'agent-tab-deepseek-concise',
+        callerToken: 'agtok_deepseek_concise',
+        workspacePath: '/tmp/workspace',
+      },
+    });
+
+    expect(runTurnCalls).toHaveLength(1);
+    expect(runTurnCalls[0]?.config?.model_verbosity).toBe('low');
+    expect(runTurnCalls[0]?.developerInstructions).toContain('## DeepSeek Flash response style');
   });
 
   test('does not inject interpreter app tools as direct MCP tools by default', async () => {

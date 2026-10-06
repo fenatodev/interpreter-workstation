@@ -16,6 +16,7 @@ import {
   installTtsModel as installTtsModelService,
   isTtsModelInstalled,
   listTtsModels,
+  prewarmTtsSynthesis,
   readTextFromFile,
   synthesizeSpeech,
   toPlaybackBase64,
@@ -201,6 +202,9 @@ async function resolveSpeakSettings(request: SpeakTextRequest): Promise<TtsSetti
 
 export async function getSettings(): Promise<{ settings: TtsSettings; installRoot: string }> {
   const settings = await configStore.getTtsSettings();
+  void prewarmTtsSynthesis(settings.modelId, settings.provider).catch((error) => {
+    console.warn('[TTS] Failed to prewarm selected model.', error instanceof Error ? error.message : error);
+  });
   return {
     settings,
     installRoot: getTtsInstallRoot(),
@@ -214,6 +218,9 @@ export async function setSettings(
     const next = await resolveSettingsUpdate(partial);
     await configStore.setTtsSettings(next);
     broadcastEvent(IPC_CHANNELS.TTS_SETTINGS_CHANGED, { settings: next });
+    void prewarmTtsSynthesis(next.modelId, next.provider).catch((error) => {
+      console.warn('[TTS] Failed to prewarm selected model.', error instanceof Error ? error.message : error);
+    });
     return {
       success: true,
       settings: next,

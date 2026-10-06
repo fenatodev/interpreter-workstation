@@ -85,6 +85,22 @@ export const TTS_MODELS = [
     downloadBytes: 349418188,
   },
   {
+    id: 'vits-piper-pt_BR-faber-medium',
+    family: 'vits',
+    size: 'medium',
+    label: 'Piper Faber (pt-BR, rápido)',
+    description: 'Fast Brazilian Portuguese Piper voice tuned for low-latency assistant playback.',
+    assetName: 'vits-piper-pt_BR-faber-medium.tar.bz2',
+    rootDirName: 'vits-piper-pt_BR-faber-medium',
+    modelFile: 'pt_BR-faber-medium.onnx',
+    tokensFile: 'tokens.txt',
+    dataDir: 'espeak-ng-data',
+    voiceLabels: {
+      0: 'Faber (pt-BR, rápido)',
+    },
+    downloadBytes: 67183065,
+  },
+  {
     id: 'vits-piper-zh_CN-huayan-medium',
     family: 'vits',
     size: 'medium',

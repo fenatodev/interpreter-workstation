@@ -820,6 +820,18 @@ function appendTaskSpecificInstructions(
   return `${developerInstructions}\n\n## Task-Specific Instructions\n${system.trim()}`;
 }
 
+export function appendModelSpecificResponseStyle(
+  developerInstructions: string,
+  modelId: string,
+): string {
+  if (modelId !== 'deepseek-flash') {
+    return developerInstructions;
+  }
+
+  return `${developerInstructions}\n\n## DeepSeek Flash response style
+For ordinary user questions, answer in Brazilian Portuguese with the shortest complete answer that solves the request, usually 1–3 short sentences or short paragraphs. Do not restate the question, add a preamble, repeat conclusions, or create long lists unless they are necessary. Prefer one direct recommendation over enumerating many alternatives. For development or operational tasks, keep status updates and final summaries compact while still reporting material risks, failures, and validation results.`;
+}
+
 export async function buildCodexDeveloperInstructions(options: {
   modelId: string;
   interpreterCliAvailable: boolean;
@@ -857,6 +869,10 @@ export async function buildCodexDeveloperInstructions(options: {
   developerInstructions = appendCustomInstructionsToPrompt(
     developerInstructions,
     customInstructions,
+  );
+  developerInstructions = appendModelSpecificResponseStyle(
+    developerInstructions,
+    options.modelId,
   );
   return appendTaskSpecificInstructions(developerInstructions, options.system);
 }
@@ -2057,6 +2073,7 @@ export async function runCodexAgentTurn(
   const threadConfig = {
     ...(profile.harness !== undefined ? { harness: profile.harness } : {}),
     ...callerConfig,
+    ...(resolvedModel === 'deepseek-flash' ? { model_verbosity: 'low' } : {}),
     ...(options.reasoningEffort ? { model_reasoning_effort: options.reasoningEffort } : {}),
     ...(options.usesChatGptAuth ? { forced_login_method: 'chatgpt' } : {}),
     // App tools are discovered and executed through the governed interpreter-app

@@ -16,7 +16,11 @@ interface EnqueuedSentence {
 
 /**
  * Singleton hook that wires the TTS playback pipeline:
- *   enqueue-sentence events → tts.speak IPC → playback-requested broadcast → Audio playback
+ *   sentence queue -> synthesis queue -> ready-audio queue -> Audio playback
+ *
+ * Synthesis intentionally runs ahead of playback. With a faster-than-real-time
+ * local TTS model this lets the next sentence become ready while the current
+ * sentence is still playing, avoiding a synthesis-sized pause between them.
  *
  * Also handles standalone playback from the speak_text tool and settings previews
  * (audio arrives via onPlaybackRequested without a preceding enqueue event).
@@ -27,26 +31,12 @@ export function useTtsPlayback(): void {
   "use no memo";
 
   const queueRef = useRef<EnqueuedSentence[]>([]);
+  const readyAudioQueueRef = useRef<TtsPlaybackRequestedEvent[]>([]);
   const isProcessingRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const stoppedRef = useRef(false);
-  const playbackResolveRef = useRef<(() => void) | null>(null);
 
-  const stopPlayback = useCallback(() => {
-    stoppedRef.current = true;
-    queueRef.current = [];
-
-    const audio = currentAudioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.removeAttribute('src');
-      currentAudioRef.current = null;
-    }
-
-    const resolve = playbackResolveRef.current;
-    playbackResolveRef.current = null;
-    resolve?.();
-
+  const dispatchIdleState = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent(ASSISTANT_TTS_PLAYBACK_STATE_EVENT, {
         detail: { isSpeaking: false },
@@ -59,53 +49,83 @@ export function useTtsPlayback(): void {
     );
   }, []);
 
-  // Listen for synthesised audio from the server and play it.
-  // Audio arrives here from two sources:
-  //   1. Queue-driven: processQueue → tts.speak → server broadcasts
-  //   2. Standalone:   speak_text tool / settings preview → server broadcasts
+  const playNextReadyAudio = useCallback(() => {
+    if (stoppedRef.current || currentAudioRef.current) return;
+
+    const event = readyAudioQueueRef.current.shift();
+    if (!event) {
+      if (!isProcessingRef.current && queueRef.current.length === 0) {
+        dispatchIdleState();
+      }
+      return;
+    }
+
+    window.dispatchEvent(
+      new CustomEvent(ASSISTANT_TTS_PLAYBACK_STATE_EVENT, {
+        detail: { isSpeaking: true },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent(ASSISTANT_TTS_MESSAGE_SPEAKING_EVENT, {
+        detail: {
+          messageId: event.messageId ?? null,
+          sentenceIndex: event.sentenceIndex ?? null,
+          text: event.text ?? null,
+        },
+      }),
+    );
+
+    const audio = new Audio(`data:${event.mimeType};base64,${event.audioBase64}`);
+    currentAudioRef.current = audio;
+
+    const finish = () => {
+      if (currentAudioRef.current !== audio) return;
+      currentAudioRef.current = null;
+      playNextReadyAudio();
+    };
+
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.play().catch(finish);
+  }, [dispatchIdleState]);
+
+  const stopPlayback = useCallback(() => {
+    stoppedRef.current = true;
+    queueRef.current = [];
+    readyAudioQueueRef.current = [];
+
+    const audio = currentAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+      currentAudioRef.current = null;
+    }
+
+    dispatchIdleState();
+  }, [dispatchIdleState]);
+
+  // Server-side synthesis broadcasts each completed WAV. Queue the WAV instead
+  // of playing it immediately so multiple prefetched sentences remain ordered.
   useEffect(() => {
     const unsubscribe = ttsIpc.onPlaybackRequested((event: TtsPlaybackRequestedEvent) => {
-      // If the queue was stopped AND the queue loop is still unwinding,
-      // this is stale in-flight audio from the cancelled run — drop it.
+      // A stop can race with a synthesis already running. That synthesis emits
+      // its broadcast before its IPC promise settles, so drop it while the old
+      // queue loop is still unwinding.
       if (stoppedRef.current && isProcessingRef.current) {
         return;
       }
 
-      // Clear any leftover stop flag so standalone audio (tool calls,
-      // settings previews) is never blocked by a previous stop.
+      // Standalone previews/tool playback are allowed after a previous stop.
       stoppedRef.current = false;
-
-      window.dispatchEvent(
-        new CustomEvent(ASSISTANT_TTS_MESSAGE_SPEAKING_EVENT, {
-          detail: {
-            messageId: event.messageId ?? null,
-            sentenceIndex: event.sentenceIndex ?? null,
-            text: event.text ?? null,
-          },
-        }),
-      );
-
-      const audio = new Audio(`data:${event.mimeType};base64,${event.audioBase64}`);
-      currentAudioRef.current = audio;
-
-      const finish = () => {
-        if (currentAudioRef.current === audio) {
-          currentAudioRef.current = null;
-        }
-        const resolve = playbackResolveRef.current;
-        playbackResolveRef.current = null;
-        resolve?.();
-      };
-
-      audio.onended = finish;
-      audio.onerror = finish;
-      audio.play().catch(finish);
+      readyAudioQueueRef.current.push(event);
+      playNextReadyAudio();
     });
 
     return unsubscribe;
-  }, []);
+  }, [playNextReadyAudio]);
 
-  // Drain the sentence queue one sentence at a time.
+  // Drain synthesis independently from playback. Once a WAV is broadcast, move
+  // immediately to the next sentence; audio playback continues from its own queue.
   const processQueue = useCallback(async () => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
@@ -120,60 +140,37 @@ export function useTtsPlayback(): void {
     while (queueRef.current.length > 0 && !stoppedRef.current) {
       const sentence = queueRef.current.shift()!;
 
-      // Prepare a promise that resolves when audio playback finishes.
-      // Must be created *before* calling speak() because the server broadcasts
-      // the audio synchronously inside the handler (before speak() resolves).
-      const playbackPromise = new Promise<void>((resolve) => {
-        playbackResolveRef.current = resolve;
-      });
-
       try {
-        const result = await ttsIpc.speak({
+        await ttsIpc.speak({
           text: sentence.text,
           play: true,
           source: sentence.source,
           messageId: sentence.messageId,
           sentenceIndex: sentence.sentenceIndex,
         });
-
-        if (!result.success || stoppedRef.current) {
-          // No broadcast was sent (or we were stopped) — resolve manually.
-          const resolve = playbackResolveRef.current;
-          playbackResolveRef.current = null;
-          resolve?.();
-          continue;
-        }
-
-        await playbackPromise;
       } catch {
-        const resolve = playbackResolveRef.current;
-        playbackResolveRef.current = null;
-        resolve?.();
+        // Skip a failed sentence and keep the remainder of the response flowing.
       }
     }
 
     isProcessingRef.current = false;
 
-    if (!stoppedRef.current) {
-      window.dispatchEvent(
-        new CustomEvent(ASSISTANT_TTS_PLAYBACK_STATE_EVENT, {
-          detail: { isSpeaking: false },
-        }),
-      );
-      window.dispatchEvent(
-        new CustomEvent(ASSISTANT_TTS_MESSAGE_SPEAKING_EVENT, {
-          detail: { messageId: null, sentenceIndex: null, text: null },
-        }),
-      );
+    if (
+      !stoppedRef.current
+      && !currentAudioRef.current
+      && readyAudioQueueRef.current.length === 0
+      && queueRef.current.length === 0
+    ) {
+      dispatchIdleState();
     }
 
-    // Pick up sentences enqueued while the loop was winding down after a stop.
-    if (queueRef.current.length > 0) {
+    // Pick up sentences enqueued during the narrow window while this loop was
+    // winding down.
+    if (queueRef.current.length > 0 && !stoppedRef.current) {
       void processQueue();
     }
-  }, []);
+  }, [dispatchIdleState]);
 
-  // Listen for enqueue and stop events from the rest of the app.
   useEffect(() => {
     const handleEnqueue = (event: Event) => {
       const detail = (event as CustomEvent<EnqueuedSentence>).detail;

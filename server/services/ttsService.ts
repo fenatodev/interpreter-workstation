@@ -619,6 +619,7 @@ export interface SynthesizeSpeechResult {
 }
 
 interface WorkerSynthesisRequest {
+  modelId: TtsModelId;
   sherpaOnnxModulePath: string;
   family: TtsModelFamily;
   modelPath?: string;
@@ -638,6 +639,8 @@ interface WorkerSynthesisRequest {
 }
 
 interface WorkerSynthesisSuccess {
+  type: 'result';
+  id: number;
   ok: true;
   wavBase64: string;
   sampleRate: number;
@@ -646,11 +649,27 @@ interface WorkerSynthesisSuccess {
 }
 
 interface WorkerSynthesisFailure {
+  type: 'result';
+  id: number;
   ok: false;
   error: string;
 }
 
-type WorkerSynthesisResponse = WorkerSynthesisSuccess | WorkerSynthesisFailure;
+interface WorkerSynthesisReady {
+  type: 'ready';
+  numSpeakers: number;
+}
+
+interface WorkerSynthesisFatal {
+  type: 'fatal';
+  error: string;
+}
+
+type WorkerSynthesisResponse =
+  | WorkerSynthesisSuccess
+  | WorkerSynthesisFailure
+  | WorkerSynthesisReady
+  | WorkerSynthesisFatal;
 
 let cachedSherpaOnnxModulePath: string | null = null;
 
@@ -1673,54 +1692,206 @@ function createWorkerOfflineTtsConfig(data) {
   throw new Error(\`Unsupported TTS model family: \${data.family}\`);
 }
 
+let engine;
+let totalSpeakers = 0;
+
 try {
   const sherpaOnnx = require(
     requireWorkerModulePath(workerData.sherpaOnnxModulePath, 'sherpaOnnxModulePath'),
   );
   const createOfflineTts = getCreateOfflineTtsFactory(sherpaOnnx);
-  const engine = createOfflineTts(createWorkerOfflineTtsConfig(workerData));
+  engine = createOfflineTts(createWorkerOfflineTtsConfig(workerData));
 
   if (!engine || typeof engine.generate !== 'function') {
     throw new Error('Failed to initialize sherpa-onnx offline TTS engine');
   }
 
-  const totalSpeakers = Math.max(1, engine.numSpeakers || 0);
-  if (!Number.isInteger(workerData.voiceId) || workerData.voiceId < 0 || workerData.voiceId >= totalSpeakers) {
-    throw new Error(\`Invalid voiceId \${workerData.voiceId}. Valid range: 0-\${totalSpeakers - 1}\`);
-  }
+  totalSpeakers = Math.max(1, engine.numSpeakers || 0);
+  parentPort.postMessage({ type: 'ready', numSpeakers: totalSpeakers });
 
-  const generated = engine.generate({
-    text: workerData.text,
-    sid: workerData.voiceId,
-    speed: workerData.speed,
-  });
+  parentPort.on('message', (request) => {
+    const id = Number.isInteger(request?.id) ? request.id : -1;
+    try {
+      if (!Number.isInteger(request?.voiceId) || request.voiceId < 0 || request.voiceId >= totalSpeakers) {
+        throw new Error(\`Invalid voiceId \${request?.voiceId}. Valid range: 0-\${totalSpeakers - 1}\`);
+      }
 
-  if (typeof engine.free === 'function') {
-    engine.free();
-  }
-
-  const pitchedSamples = applySimplePitchShift(generated.samples, workerData.pitch);
-  const processedSamples = workerData.autotuneEnabled
-    ? applyAutotune(pitchedSamples, generated.sampleRate, 1)
-    : pitchedSamples;
-  const targetOutputSampleRate = 48000;
-  const finalSamples = resampleToSampleRate(
-    processedSamples,
-    generated.sampleRate,
-    targetOutputSampleRate,
-  );
-  const wavBuffer = encodeFloat32ToWav(finalSamples, targetOutputSampleRate);
-  parentPort.postMessage({
-    ok: true,
-    wavBase64: wavBuffer.toString('base64'),
-    sampleRate: targetOutputSampleRate,
-    numSamples: finalSamples.length,
-    numSpeakers: totalSpeakers,
+      const generated = engine.generate({
+        text: request.text,
+        sid: request.voiceId,
+        speed: request.speed,
+      });
+      const pitchedSamples = applySimplePitchShift(generated.samples, request.pitch);
+      const processedSamples = request.autotuneEnabled
+        ? applyAutotune(pitchedSamples, generated.sampleRate, 1)
+        : pitchedSamples;
+      const targetOutputSampleRate = 48000;
+      const finalSamples = resampleToSampleRate(
+        processedSamples,
+        generated.sampleRate,
+        targetOutputSampleRate,
+      );
+      const wavBuffer = encodeFloat32ToWav(finalSamples, targetOutputSampleRate);
+      parentPort.postMessage({
+        type: 'result',
+        id,
+        ok: true,
+        wavBase64: wavBuffer.toString('base64'),
+        sampleRate: targetOutputSampleRate,
+        numSamples: finalSamples.length,
+        numSpeakers: totalSpeakers,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      parentPort.postMessage({ type: 'result', id, ok: false, error: message });
+    }
   });
 } catch (error) {
-  postError(error);
+  const message = error instanceof Error ? error.message : String(error);
+  parentPort.postMessage({ type: 'fatal', error: message });
 }
 `;
+
+interface PendingWorkerSynthesis {
+  resolve: (value: {
+    wavBuffer: Buffer;
+    sampleRate: number;
+    numSamples: number;
+    numSpeakers: number;
+  }) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+interface PersistentSynthesisWorker {
+  worker: Worker;
+  ready: Promise<void>;
+  nextRequestId: number;
+  pending: Map<number, PendingWorkerSynthesis>;
+}
+
+const synthesisWorkerCache = new Map<string, PersistentSynthesisWorker>();
+
+function getSynthesisWorkerKey(request: Pick<WorkerSynthesisRequest, 'modelId' | 'provider'>): string {
+  return request.modelId + ':' + request.provider;
+}
+
+function rejectPendingWorkerRequests(entry: PersistentSynthesisWorker, error: Error): void {
+  for (const pending of entry.pending.values()) {
+    clearTimeout(pending.timeout);
+    pending.reject(error);
+  }
+  entry.pending.clear();
+}
+
+function createPersistentSynthesisWorker(request: WorkerSynthesisRequest): PersistentSynthesisWorker {
+  const cacheKey = getSynthesisWorkerKey(request);
+  let resolveReady!: () => void;
+  let rejectReady!: (error: Error) => void;
+  let readySettled = false;
+
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = () => {
+      if (readySettled) return;
+      readySettled = true;
+      resolve();
+    };
+    rejectReady = (error: Error) => {
+      if (readySettled) return;
+      readySettled = true;
+      reject(error);
+    };
+  });
+
+  const worker = new Worker(TTS_SYNTHESIS_WORKER_SOURCE, {
+    eval: true,
+    workerData: request,
+  });
+  worker.unref();
+
+  const entry: PersistentSynthesisWorker = {
+    worker,
+    ready,
+    nextRequestId: 1,
+    pending: new Map(),
+  };
+
+  const evict = (error: Error, terminate: boolean) => {
+    if (synthesisWorkerCache.get(cacheKey) === entry) {
+      synthesisWorkerCache.delete(cacheKey);
+    }
+    rejectReady(error);
+    rejectPendingWorkerRequests(entry, error);
+    if (terminate) {
+      void worker.terminate();
+    }
+  };
+
+  const readyTimeout = setTimeout(() => {
+    evict(new Error('TTS worker initialization timed out'), true);
+  }, 30_000);
+
+  worker.on('message', (message: WorkerSynthesisResponse) => {
+    if (!message || typeof message !== 'object' || !('type' in message)) return;
+
+    if (message.type === 'ready') {
+      clearTimeout(readyTimeout);
+      resolveReady();
+      return;
+    }
+
+    if (message.type === 'fatal') {
+      clearTimeout(readyTimeout);
+      evict(new Error(message.error || 'TTS worker failed to initialize'), true);
+      return;
+    }
+
+    if (message.type !== 'result') return;
+    const pending = entry.pending.get(message.id);
+    if (!pending) return;
+
+    entry.pending.delete(message.id);
+    clearTimeout(pending.timeout);
+
+    if (!message.ok) {
+      pending.reject(new Error(message.error || 'TTS worker failed'));
+      return;
+    }
+
+    pending.resolve({
+      wavBuffer: Buffer.from(message.wavBase64, 'base64'),
+      sampleRate: message.sampleRate,
+      numSamples: message.numSamples,
+      numSpeakers: message.numSpeakers,
+    });
+  });
+
+  worker.on('error', (error: Error) => {
+    clearTimeout(readyTimeout);
+    evict(error, false);
+  });
+
+  worker.on('exit', (code: number) => {
+    clearTimeout(readyTimeout);
+    if (synthesisWorkerCache.get(cacheKey) !== entry && entry.pending.size === 0) return;
+    evict(new Error('TTS worker exited with code ' + code), false);
+  });
+
+  synthesisWorkerCache.set(cacheKey, entry);
+  return entry;
+}
+
+async function getPersistentSynthesisWorker(
+  request: WorkerSynthesisRequest,
+): Promise<PersistentSynthesisWorker> {
+  const cacheKey = getSynthesisWorkerKey(request);
+  let entry = synthesisWorkerCache.get(cacheKey);
+  if (!entry) {
+    entry = createPersistentSynthesisWorker(request);
+  }
+  await entry.ready;
+  return entry;
+}
 
 async function synthesizeSpeechInWorker(
   request: WorkerSynthesisRequest,
@@ -1730,66 +1901,61 @@ async function synthesizeSpeechInWorker(
   numSamples: number;
   numSpeakers: number;
 }> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(TTS_SYNTHESIS_WORKER_SOURCE, {
-      eval: true,
-      workerData: request,
-    });
+  const entry = await getPersistentSynthesisWorker(request);
+  const cacheKey = getSynthesisWorkerKey(request);
+  const id = entry.nextRequestId;
+  entry.nextRequestId += 1;
 
-    let settled = false;
+  return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      void worker.terminate();
+      entry.pending.delete(id);
+      if (synthesisWorkerCache.get(cacheKey) === entry) {
+        synthesisWorkerCache.delete(cacheKey);
+      }
+      rejectPendingWorkerRequests(entry, new Error('TTS synthesis worker became unresponsive'));
+      void entry.worker.terminate();
       reject(new Error('TTS synthesis timed out'));
     }, 120_000);
 
-    const finalize = (handler: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      handler();
-    };
-
-    worker.once('message', (message: WorkerSynthesisResponse) => {
-      finalize(() => {
-        void worker.terminate();
-        if (!message || typeof message !== 'object' || !('ok' in message)) {
-          reject(new Error('Invalid TTS worker response'));
-          return;
-        }
-
-        if (!message.ok) {
-          reject(new Error(message.error || 'TTS worker failed'));
-          return;
-        }
-
-        resolve({
-          wavBuffer: Buffer.from(message.wavBase64, 'base64'),
-          sampleRate: message.sampleRate,
-          numSamples: message.numSamples,
-          numSpeakers: message.numSpeakers,
-        });
-      });
+    entry.pending.set(id, { resolve, reject, timeout });
+    entry.worker.postMessage({
+      id,
+      text: request.text,
+      voiceId: request.voiceId,
+      speed: request.speed,
+      pitch: request.pitch,
+      autotuneEnabled: request.autotuneEnabled,
     });
+  });
+}
 
-    worker.once('error', (error: Error) => {
-      finalize(() => {
-        void worker.terminate();
-        reject(error);
-      });
-    });
+export async function prewarmTtsSynthesis(
+  modelId: TtsModelId,
+  provider: TtsProvider,
+): Promise<void> {
+  if (!await isTtsModelInstalled(modelId)) {
+    return;
+  }
 
-    worker.once('exit', (code: number) => {
-      if (settled) return;
-      finalize(() => {
-        if (code === 0) {
-          reject(new Error('TTS worker exited without response'));
-          return;
-        }
-        reject(new Error(`TTS worker exited with code ${code}`));
-      });
-    });
+  const required = getModelRuntimePaths(modelId);
+  await getPersistentSynthesisWorker({
+    modelId,
+    sherpaOnnxModulePath: resolveSherpaOnnxModulePath(),
+    family: required.family,
+    modelPath: required.modelPath,
+    voicesPath: required.voicesPath,
+    tokensPath: required.tokensPath,
+    dataDirPath: required.dataDirPath,
+    lexiconPath: required.lexiconPath,
+    acousticModelPath: required.acousticModelPath,
+    vocoderPath: required.vocoderPath,
+    lang: required.lang,
+    provider,
+    text: '',
+    voiceId: 0,
+    speed: 1,
+    pitch: 0,
+    autotuneEnabled: false,
   });
 }
 
@@ -1810,6 +1976,7 @@ export async function synthesizeSpeech(request: SynthesizeSpeechRequest): Promis
   const autotuneEnabled = request.autotuneEnabled === true;
   const required = getModelRuntimePaths(request.modelId);
   const generated = await synthesizeSpeechInWorker({
+    modelId: request.modelId,
     sherpaOnnxModulePath: resolveSherpaOnnxModulePath(),
     family: required.family,
     modelPath: required.modelPath,
@@ -1866,5 +2033,12 @@ export async function removeInstalledTtsModel(modelId: TtsModelId): Promise<void
       // Best-effort cache cleanup.
     }
     engineCache.delete(key);
+  }
+
+  for (const [key, entry] of synthesisWorkerCache.entries()) {
+    if (!key.startsWith(cachePrefix)) continue;
+    synthesisWorkerCache.delete(key);
+    rejectPendingWorkerRequests(entry, new Error('TTS model was removed'));
+    void entry.worker.terminate();
   }
 }

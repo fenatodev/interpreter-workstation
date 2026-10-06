@@ -30,8 +30,9 @@ WHISPER_ROOT="$(dirname "$ROOT")/whisper.cpp"
 WHISPER_MODEL_NAME="ggml-large-v3-turbo-q5_0.bin"
 WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$WHISPER_MODEL_NAME"
 WHISPER_MODEL_SHA256="394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
-TTS_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
-EXPECTED_TAG="known-good-2026-10-05-whisper-voice"
+TTS_FAST_PTBR_MODEL_ID="vits-piper-pt_BR-faber-medium"
+TTS_QUALITY_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
+EXPECTED_TAG="known-good-2026-10-05-fast-voice"
 
 log() { printf "[restore] %s\n" "$*"; }
 die() { printf "[restore] ERROR: %s\n" "$*" >&2; exit 1; }
@@ -71,9 +72,12 @@ if [[ "$MODE" == "check" ]]; then
   else
     log "whisper-server=not-ready"
   fi
+  [[ -f "$CONFIG_DIR/tts-models/vits-piper-pt_BR-faber-medium/vits-piper-pt_BR-faber-medium/pt_BR-faber-medium.onnx" ]] \
+    && log "tts-faber-ptbr=installed" \
+    || log "tts-faber-ptbr=missing"
   [[ -f "$CONFIG_DIR/tts-models/kokoro-pt_BR-dora-v1_0/kokoro-multi-lang-v1_0/model.onnx" ]] \
-    && log "tts-dora-ptbr=installed" \
-    || log "tts-dora-ptbr=missing"
+    && log "tts-kokoro-ptbr=installed" \
+    || log "tts-kokoro-ptbr=missing"
   if curl -fsS --max-time 2 http://127.0.0.1:5177/api/profiles >/dev/null 2>&1; then
     python3 - <<'PY'
 import json, urllib.request
@@ -371,25 +375,32 @@ def post(path,payload,timeout=60):
     with urllib.request.urlopen(req,timeout=timeout) as resp:
         return json.loads(resp.read().decode())
 
-model_id="kokoro-pt_BR-dora-v1_0"
+fast_model_id="vits-piper-pt_BR-faber-medium"
+quality_model_id="kokoro-pt_BR-dora-v1_0"
 models=post("/tts/listModels",[])
-model=next((item for item in models.get("models",[]) if item.get("id")==model_id),None)
-if not model:
-    raise RuntimeError(f"pt-BR TTS model missing from catalog: {model_id}")
-if not model.get("installed"):
-    result=post("/tts/installModel",[{"modelId":model_id}],timeout=900)
-    if not result.get("success"):
-        raise RuntimeError(result.get("error") or "pt-BR TTS install failed")
-voices=post("/tts/getVoices",[{"modelId":model_id}],timeout=180)
-voice=next((item for item in voices.get("voices",[]) if item.get("id")==42),None)
-if not voice:
+by_id={item.get("id"):item for item in models.get("models",[])}
+
+for model_id in (fast_model_id,quality_model_id):
+    model=by_id.get(model_id)
+    if not model:
+        raise RuntimeError(f"pt-BR TTS model missing from catalog: {model_id}")
+    if not model.get("installed"):
+        result=post("/tts/installModel",[{"modelId":model_id}],timeout=900)
+        if not result.get("success"):
+            raise RuntimeError(result.get("error") or f"pt-BR TTS install failed: {model_id}")
+
+fast_voices=post("/tts/getVoices",[{"modelId":fast_model_id}],timeout=180)
+if not any(item.get("id")==0 for item in fast_voices.get("voices",[])):
+    raise RuntimeError("Faber pt-BR voiceId 0 unavailable")
+quality_voices=post("/tts/getVoices",[{"modelId":quality_model_id}],timeout=180)
+if not any(item.get("id")==42 for item in quality_voices.get("voices",[])):
     raise RuntimeError("Dora pt-BR voiceId 42 unavailable")
 
 tts=post("/tts/setSettings",[{"settings":{
     "readAssistantMessages":True,
-    "modelId":model_id,
-    "voiceId":42,
-    "speed":1.0,
+    "modelId":fast_model_id,
+    "voiceId":0,
+    "speed":1.12,
     "pitch":0,
     "provider":"cpu",
     "autotuneEnabled":False,
@@ -411,7 +422,7 @@ stt=post("/stt/setSettings",[{"settings":{
 }}])
 if not stt.get("success"):
     raise RuntimeError(stt.get("error") or "failed to configure STT")
-print("[restore] voice=Kokoro pt-BR (Dora/Alex/Santa); STT=Whisper push-to-talk")
+print("[restore] TTS=Faber pt-BR fast default + Kokoro quality voices; STT=Whisper push-to-talk")
 PY
 
 log "applying MCP defaults"
