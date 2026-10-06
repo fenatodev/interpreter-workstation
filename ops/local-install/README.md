@@ -5,7 +5,7 @@ This directory reproduces the known-good Ubuntu workstation setup without storin
 ## Exact reference
 
 - Branch: `interpreter-stable`
-- Restore-ready tag: `known-good-2026-10-05-fast-voice`
+- Restore-ready tag: `known-good-2026-10-05-female-fast-voice`
 - Open Interpreter/OIX: 0.0.55
 - Linux Computer Use: 0.7.10
 - Node: 22.23.3
@@ -13,7 +13,7 @@ This directory reproduces the known-good Ubuntu workstation setup without storin
 - Bun: 1.4.2
 - GitHub CLI: 2.102.0
 - STT: whisper.cpp 1.9.4 + large-v3-turbo-q5_0, Vulkan, pt-BR, full-utterance Push-to-Talk
-- TTS default: Piper Faber pt-BR at 1.12x with persistent worker + audio prefetch; Kokoro Dora/Alex/Santa retained as quality alternatives
+- TTS default: Piper Dii pt-BR feminina at 1.10x, 4 synthesis threads, persistent worker + audio prefetch; Faber retained as fast fallback and Kokoro Dora/Alex/Santa as alternatives
 - DeepSeek proxy: supervised user service with automatic restart
 
 ## Fresh restore
@@ -25,11 +25,11 @@ mkdir -p /mnt/infra/apps
 git clone --branch interpreter-stable https://github.com/fenatodev/interpreter-workstation.git /mnt/infra/apps/interpreter-workstation
 cd /mnt/infra/apps/interpreter-workstation
 git fetch --tags
-git reset --hard known-good-2026-10-05-fast-voice
+git reset --hard known-good-2026-10-05-female-fast-voice
 ./ops/local-install/restore.sh apply
 ```
 
-The script installs the pinned user-space toolchain, verified OIX and Computer Use binaries, GitHub CLI, the launcher, desktop entry, DeepSeek proxy, safe Interpreter settings, autonomy policy, MCP defaults, the DeepSeek Flash profile, whisper.cpp with Vulkan, the verified large-v3-turbo-q5_0 model and persistent Whisper service, fast Piper Faber pt-BR plus Kokoro pt-BR quality voices, and builds/starts Workstation. DeepSeek Flash is configured for concise low-verbosity replies without changing the OpenAI profiles.
+The script installs the pinned user-space toolchain, verified OIX and Computer Use binaries, GitHub CLI, the launcher, desktop entry, DeepSeek proxy, safe Interpreter settings, autonomy policy, MCP defaults, the DeepSeek Flash profile, whisper.cpp with Vulkan, the verified large-v3-turbo-q5_0 model and persistent Whisper service, Piper Dii pt-BR female voice plus Faber/Kokoro alternatives, and builds/starts Workstation. DeepSeek Flash is configured for concise low-verbosity replies without changing the OpenAI profiles. Dii is for personal/non-commercial use under its upstream CC BY-NC-ND 4.0 license.
 
 Microsoft Edge is intentionally handled by `./ops/local-install/install-edge.sh` because Ubuntu authentication is required. The helper validates the official Microsoft package, installs it through the system authentication prompt, then opens the official Interpreter Chrome Extension page; Chromium still requires one human confirmation to add the extension.
 

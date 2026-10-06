@@ -32,7 +32,7 @@ WHISPER_MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$WH
 WHISPER_MODEL_SHA256="394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
 TTS_FAST_PTBR_MODEL_ID="vits-piper-pt_BR-faber-medium"
 TTS_QUALITY_PTBR_MODEL_ID="kokoro-pt_BR-dora-v1_0"
-EXPECTED_TAG="known-good-2026-10-05-fast-voice"
+EXPECTED_TAG="known-good-2026-10-05-female-fast-voice"
 
 log() { printf "[restore] %s\n" "$*"; }
 die() { printf "[restore] ERROR: %s\n" "$*" >&2; exit 1; }
@@ -72,6 +72,9 @@ if [[ "$MODE" == "check" ]]; then
   else
     log "whisper-server=not-ready"
   fi
+  [[ -f "$CONFIG_DIR/tts-models/vits-piper-pt_BR-dii-high/vits-piper-pt_BR-dii-high/pt_BR-dii-high.onnx" ]] \
+    && log "tts-dii-ptbr=installed" \
+    || log "tts-dii-ptbr=missing"
   [[ -f "$CONFIG_DIR/tts-models/vits-piper-pt_BR-faber-medium/vits-piper-pt_BR-faber-medium/pt_BR-faber-medium.onnx" ]] \
     && log "tts-faber-ptbr=installed" \
     || log "tts-faber-ptbr=missing"
@@ -375,12 +378,13 @@ def post(path,payload,timeout=60):
     with urllib.request.urlopen(req,timeout=timeout) as resp:
         return json.loads(resp.read().decode())
 
-fast_model_id="vits-piper-pt_BR-faber-medium"
+default_model_id="vits-piper-pt_BR-dii-high"
+fallback_model_id="vits-piper-pt_BR-faber-medium"
 quality_model_id="kokoro-pt_BR-dora-v1_0"
 models=post("/tts/listModels",[])
 by_id={item.get("id"):item for item in models.get("models",[])}
 
-for model_id in (fast_model_id,quality_model_id):
+for model_id in (default_model_id,fallback_model_id,quality_model_id):
     model=by_id.get(model_id)
     if not model:
         raise RuntimeError(f"pt-BR TTS model missing from catalog: {model_id}")
@@ -389,8 +393,11 @@ for model_id in (fast_model_id,quality_model_id):
         if not result.get("success"):
             raise RuntimeError(result.get("error") or f"pt-BR TTS install failed: {model_id}")
 
-fast_voices=post("/tts/getVoices",[{"modelId":fast_model_id}],timeout=180)
-if not any(item.get("id")==0 for item in fast_voices.get("voices",[])):
+default_voices=post("/tts/getVoices",[{"modelId":default_model_id}],timeout=180)
+if not any(item.get("id")==0 for item in default_voices.get("voices",[])):
+    raise RuntimeError("Dii pt-BR voiceId 0 unavailable")
+fallback_voices=post("/tts/getVoices",[{"modelId":fallback_model_id}],timeout=180)
+if not any(item.get("id")==0 for item in fallback_voices.get("voices",[])):
     raise RuntimeError("Faber pt-BR voiceId 0 unavailable")
 quality_voices=post("/tts/getVoices",[{"modelId":quality_model_id}],timeout=180)
 if not any(item.get("id")==42 for item in quality_voices.get("voices",[])):
@@ -398,9 +405,9 @@ if not any(item.get("id")==42 for item in quality_voices.get("voices",[])):
 
 tts=post("/tts/setSettings",[{"settings":{
     "readAssistantMessages":True,
-    "modelId":fast_model_id,
+    "modelId":default_model_id,
     "voiceId":0,
-    "speed":1.12,
+    "speed":1.10,
     "pitch":0,
     "provider":"cpu",
     "autotuneEnabled":False,
@@ -422,7 +429,7 @@ stt=post("/stt/setSettings",[{"settings":{
 }}])
 if not stt.get("success"):
     raise RuntimeError(stt.get("error") or "failed to configure STT")
-print("[restore] TTS=Faber pt-BR fast default + Kokoro quality voices; STT=Whisper push-to-talk")
+print("[restore] TTS=Dii pt-BR female default + Faber/Kokoro alternatives; STT=Whisper push-to-talk")
 PY
 
 log "applying MCP defaults"

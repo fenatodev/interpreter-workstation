@@ -85,6 +85,22 @@ export const TTS_MODELS = [
     downloadBytes: 349418188,
   },
   {
+    id: 'vits-piper-pt_BR-dii-high',
+    family: 'vits',
+    size: 'medium',
+    label: 'Piper Dii (pt-BR, feminina high)',
+    description: 'Natural Brazilian Portuguese female Piper voice. Personal/non-commercial license applies.',
+    assetName: 'vits-piper-pt_BR-dii-high.tar.bz2',
+    rootDirName: 'vits-piper-pt_BR-dii-high',
+    modelFile: 'pt_BR-dii-high.onnx',
+    tokensFile: 'tokens.txt',
+    dataDir: 'espeak-ng-data',
+    voiceLabels: {
+      0: 'Dii (pt-BR, feminina)',
+    },
+    downloadBytes: 67238016,
+  },
+  {
     id: 'vits-piper-pt_BR-faber-medium',
     family: 'vits',
     size: 'medium',

@@ -64,6 +64,8 @@ describe('appendModelSpecificResponseStyle', () => {
     const deepseek = appendModelSpecificResponseStyle(base, 'deepseek-flash');
     expect(deepseek).toContain('## DeepSeek Flash response style');
     expect(deepseek).toContain('shortest complete answer');
+    expect(deepseek).toContain('1–2 short sentences');
+    expect(deepseek).toContain('80 words');
     expect(appendModelSpecificResponseStyle(base, 'gpt-5.6-sol')).toBe(base);
   });
 });

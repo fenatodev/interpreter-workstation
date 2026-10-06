@@ -1,5 +1,5 @@
 {
-  "known_good_tag": "known-good-2026-10-05-fast-voice",
+  "known_good_tag": "known-good-2026-10-05-female-fast-voice",
   "branch": "interpreter-stable",
   "versions": {
     "node": "v22.23.3",
@@ -10,8 +10,9 @@
     "computer_use_linux": "0.7.10",
     "whisper_cpp": "1.9.4",
     "whisper_model": "large-v3-turbo-q5_0",
-    "tts_default": "vits-piper-pt_BR-faber-medium",
-    "tts_quality": "kokoro-pt_BR-dora-v1_0"
+    "tts_default": "vits-piper-pt_BR-dii-high",
+    "tts_quality": "kokoro-pt_BR-dora-v1_0",
+    "tts_fallback": "vits-piper-pt_BR-faber-medium"
   },
   "sha256": {
     "interpreter_cli": "7eab0cb9e9bca5e08efaa029e062887b8a220019560792d54c0af465227e3237",
@@ -26,17 +27,17 @@
     "deepseek_secret_file": "~/.openinterpreter/secrets/deepseek.env",
     "deepseek_model": "deepseek-flash",
     "deepseek_model_verbosity": "low",
-    "deepseek_response_style": "concise pt-BR, usually 1-3 short sentences or paragraphs",
+    "deepseek_response_style": "concise pt-BR, usually 1-2 short sentences and about 80 words maximum by default",
     "stt_backend": "whisper",
     "stt_mode": "push-to-talk",
     "stt_language": "pt",
     "stt_preview_before_send_ms": 650,
     "stt_runtime": "whisper.cpp Vulkan server on 127.0.0.1:1264",
     "tts_read_assistant_messages": true,
-    "tts_model_id": "vits-piper-pt_BR-faber-medium",
+    "tts_model_id": "vits-piper-pt_BR-dii-high",
     "tts_voice_id": 0,
-    "tts_voice_label": "Faber (pt-BR, rápido)",
-    "tts_speed": 1.12,
+    "tts_voice_label": "Dii (pt-BR, feminina)",
+    "tts_speed": 1.1,
     "tts_persistent_worker": true,
     "tts_audio_prefetch": true,
     "tts_quality_model_id": "kokoro-pt_BR-dora-v1_0",
@@ -47,7 +48,11 @@
     },
     "edge_browser_control_extension_requires_human_confirmation": true,
     "deepseek_proxy_supervision": "systemd-user with launcher fallback",
-    "whisper_server_supervision": "systemd-user"
+    "whisper_server_supervision": "systemd-user",
+    "tts_threads": 4,
+    "tts_fallback_model_id": "vits-piper-pt_BR-faber-medium",
+    "tts_fallback_voice_label": "Faber (pt-BR, rápido)",
+    "tts_dii_license": "CC BY-NC-ND 4.0; personal/non-commercial use"
   },
   "sources": {
     "oix": "openinterpreter/openinterpreter release rust-v0.0.55 via scripts/download-oix.mjs",
@@ -60,6 +65,8 @@
     "tts_fast": "k2-fsa/sherpa-onnx tts-models vits-piper-pt_BR-faber-medium",
     "tts_quality": "k2-fsa/sherpa-onnx kokoro-multi-lang-v1_0; pt-BR speakers pf_dora/pm_alex/pm_santa",
     "edge": "packages.microsoft.com stable repository",
-    "interpreter_browser_extension": "Chrome Web Store extension bboaaphdpllilofamfpommlbafpellnb"
+    "interpreter_browser_extension": "Chrome Web Store extension bboaaphdpllilofamfpommlbafpellnb",
+    "tts_default": "k2-fsa/sherpa-onnx tts-models vits-piper-pt_BR-dii-high; upstream OpenVoiceOS/TigreGotico",
+    "tts_fast_fallback": "k2-fsa/sherpa-onnx tts-models vits-piper-pt_BR-faber-medium"
   }
 }

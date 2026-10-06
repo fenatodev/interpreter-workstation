@@ -486,8 +486,11 @@ function requireRuntimePath(
 }
 
 function buildOfflineTtsConfig(paths: ModelRuntimePaths, provider: TtsProvider): Record<string, unknown> {
+  const configuredThreads = Number.parseInt(process.env.INTERPRETER_TTS_THREADS ?? '', 10);
   const modelConfigBase = {
-    numThreads: 1,
+    numThreads: Number.isFinite(configuredThreads) && configuredThreads > 0
+      ? Math.min(configuredThreads, 8)
+      : 4,
     debug: 0,
     provider,
   };
@@ -1631,8 +1634,11 @@ function requireWorkerModulePath(value, fieldName) {
 }
 
 function createWorkerOfflineTtsConfig(data) {
+  const configuredThreads = Number.parseInt(process.env.INTERPRETER_TTS_THREADS || '', 10);
   const modelConfigBase = {
-    numThreads: 1,
+    numThreads: Number.isFinite(configuredThreads) && configuredThreads > 0
+      ? Math.min(configuredThreads, 8)
+      : 4,
     debug: 0,
     provider: data.provider,
   };

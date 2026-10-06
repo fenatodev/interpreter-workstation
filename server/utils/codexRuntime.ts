@@ -829,7 +829,7 @@ export function appendModelSpecificResponseStyle(
   }
 
   return `${developerInstructions}\n\n## DeepSeek Flash response style
-For ordinary user questions, answer in Brazilian Portuguese with the shortest complete answer that solves the request, usually 1–3 short sentences or short paragraphs. Do not restate the question, add a preamble, repeat conclusions, or create long lists unless they are necessary. Prefer one direct recommendation over enumerating many alternatives. For development or operational tasks, keep status updates and final summaries compact while still reporting material risks, failures, and validation results.`;
+For ordinary user questions, answer in Brazilian Portuguese with the shortest complete answer that solves the request, usually 1–2 short sentences and normally no more than about 80 words. Do not restate the question, add a preamble, repeat conclusions, or create long lists unless necessary. Prefer one direct recommendation over enumerating alternatives. Expand only when the user explicitly asks for detail or the task genuinely requires it. For development or operational tasks, keep status updates brief and final summaries to at most 4 compact bullets unless additional detail is materially necessary, while still reporting important risks, failures, and validation results.`;
 }
 
 export async function buildCodexDeveloperInstructions(options: {
